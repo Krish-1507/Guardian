@@ -5,7 +5,19 @@ import path from "node:path";
 import fs from "node:fs";
 import { runAllAnalyzers } from "../analyzers/index.js";
 import { correlate } from "../graph/correlate.js";
+import { relevantEntriesForFiles, type MemoryType } from "../memory/store.js";
 import type { ScanResult } from "../analyzers/types.js";
+
+function memTypeColor(t: MemoryType): (s: string) => string {
+  switch (t) {
+    case "decision":
+      return chalk.cyan;
+    case "fix":
+      return chalk.green;
+    case "rejection":
+      return chalk.red;
+  }
+}
 
 function rel(repo: string, p?: string): string {
   return p ? path.relative(repo, p) : "";
@@ -84,6 +96,13 @@ function renderBox(r: ScanResult): string {
       lines.push(
         `       → ${c.symptoms.length} symptom(s) · shared: ${chalk.dim(shared)}`,
       );
+      const mem = relevantEntriesForFiles(r.repo, c.sharedFiles);
+      for (const m of mem.slice(0, 3)) {
+        const mc = memTypeColor(m.type);
+        lines.push(
+          `       ${chalk.dim("↳ recall:")} ${mc(m.type)} — ${m.summary}`,
+        );
+      }
     });
   }
 
