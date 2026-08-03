@@ -63,6 +63,9 @@ const IGNORE_DIRS = new Set([
   ".venv",
   "venv",
   "__pycache__",
+  // Fixture / seed directories that are not part of the codebase under analysis.
+  "demo-repo",
+  "templates",
 ]);
 
 export function walkFiles(root: string, exts: string[]): string[] {
