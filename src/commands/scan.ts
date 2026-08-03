@@ -4,6 +4,7 @@ import boxen from "boxen";
 import path from "node:path";
 import fs from "node:fs";
 import { runAllAnalyzers } from "../analyzers/index.js";
+import { correlate } from "../graph/correlate.js";
 import type { ScanResult } from "../analyzers/types.js";
 
 function rel(repo: string, p?: string): string {
@@ -37,16 +38,30 @@ function renderBox(r: ScanResult): string {
     );
   }
 
+  const securityClusterCount = r.clusters.filter((c) =>
+    [c.rootCause, ...c.symptoms].some((f) => f.source === "security"),
+  ).length;
+  const clusteredSecurity = r.clusters.reduce(
+    (n, c) =>
+      n + [c.rootCause, ...c.symptoms].filter((f) => f.source === "security").length,
+    0,
+  );
   const sec = r.security;
   if (sec.status === "ok") {
     if (sec.issues.length > 0) {
-      const i = sec.issues[0];
-      const loc = i.file
-        ? ` (${rel(r.repo, i.file)}${i.line ? ":" + i.line : ""})`
-        : "";
-      lines.push(
-        `${label("Security")}: ${chalk.red(`${sec.issues.length} issues`)} — ${i.severity} ${i.type}: ${i.description}${loc}`,
-      );
+      if (securityClusterCount > 0) {
+        lines.push(
+          `${label("Security")}: ${chalk.red(`${securityClusterCount} root cause(s)`)} → ${clusteredSecurity} symptoms (see below)`,
+        );
+      } else {
+        const i = sec.issues[0];
+        const loc = i.file
+          ? ` (${rel(r.repo, i.file)}${i.line ? ":" + i.line : ""})`
+          : "";
+        lines.push(
+          `${label("Security")}: ${chalk.red(`${sec.issues.length} issues`)} — ${i.severity} ${i.type}: ${i.description}${loc}`,
+        );
+      }
     } else {
       lines.push(`${label("Security")}: ${chalk.green("0 issues")} — clean`);
     }
@@ -54,6 +69,22 @@ function renderBox(r: ScanResult): string {
     lines.push(
       `${label("Security")}: ${chalk.yellow("skipped")} — ${sec.note ?? "unavailable"}`,
     );
+  }
+
+  if (r.clusters.length > 0) {
+    lines.push("");
+    const totalSymptoms = r.clusters.reduce((s, c) => s + c.symptoms.length, 0);
+    lines.push(
+      `${label("Root Causes")}: ${r.clusters.length} root cause(s) → ${totalSymptoms} symptom(s)`,
+    );
+    r.clusters.slice(0, 3).forEach((c, i) => {
+      const rc = `${c.rootCause.severity.toUpperCase()} ${c.rootCause.type}`;
+      const shared = c.sharedFiles.slice(0, 3).join(", ");
+      lines.push(`    ${i + 1}. ${chalk.red(rc)}: ${c.rootCause.description}`);
+      lines.push(
+        `       → ${c.symptoms.length} symptom(s) · shared: ${chalk.dim(shared)}`,
+      );
+    });
   }
 
   const dup = r.duplication;
@@ -123,6 +154,9 @@ export const scan = new Command("scan")
     console.log(chalk.cyan(`\nScanning ${repo} ...\n`));
 
     const result = runAllAnalyzers(repo);
+
+    const { clusters } = correlate(repo, result);
+    result.clusters = clusters;
 
     const outDir = path.join(repo, ".guardian");
     fs.mkdirSync(outDir, { recursive: true });

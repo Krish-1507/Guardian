@@ -16,5 +16,6 @@ export function runAllAnalyzers(repo: string): ScanResult {
     duplication: analyzeDuplication(repo),
     tests: analyzeTests(repo),
     perf: analyzePerf(repo),
+    clusters: [],
   };
 }

@@ -12,20 +12,21 @@ import type { DependencyGraphResult } from "./types.js";
 const JS_EXTS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
 const PY_EXTS = [".py"];
 
-export function analyzeDependencyGraph(repo: string): DependencyGraphResult {
-  const lang = detectLanguage(repo);
-  if (lang === "unknown") {
-    return {
-      status: "skipped",
-      note: "not a JS/TS or Python repo",
-      files: 0,
-      circular: [],
-      mostDependedOn: [],
-      orphans: [],
-    };
-  }
+export interface BuiltEdges {
+  edges: Map<string, Set<string>>;
+  lang: Language;
+  engine: string;
+}
 
-  // Prefer madge for JS/TS when available.
+/**
+ * Build the file import graph for a repo. Prefers `madge` for JS/TS when it is
+ * installed, otherwise falls back to a regex-based import scanner that works
+ * for both JS/TS and Python. Returns null for unsupported (non JS/TS/Python) repos.
+ */
+export function buildEdges(repo: string): BuiltEdges | null {
+  const lang = detectLanguage(repo);
+  if (lang === "unknown") return null;
+
   if (lang === "js" && commandExists("madge")) {
     const r = safeExec(
       "madge",
@@ -41,17 +42,30 @@ export function analyzeDependencyGraph(repo: string): DependencyGraphResult {
         for (const [from, deps] of Object.entries(modules)) {
           edges.set(from, new Set(deps));
         }
-        return finalizeGraph(edges, repo, "madge");
+        return { edges, lang, engine: "madge" };
       } catch {
         /* fall through to regex */
       }
     }
   }
 
-  // Regex-based fallback (works for both JS/TS and Python).
   const exts = lang === "js" ? JS_EXTS : PY_EXTS;
-  const edges = regexGraph(repo, exts, lang);
-  return finalizeGraph(edges, repo, "regex");
+  return { edges: regexGraph(repo, exts, lang), lang, engine: "regex" };
+}
+
+export function analyzeDependencyGraph(repo: string): DependencyGraphResult {
+  const built = buildEdges(repo);
+  if (!built) {
+    return {
+      status: "skipped",
+      note: "not a JS/TS or Python repo",
+      files: 0,
+      circular: [],
+      mostDependedOn: [],
+      orphans: [],
+    };
+  }
+  return finalizeGraph(built.edges, repo, built.engine);
 }
 
 function finalizeGraph(

@@ -47,6 +47,21 @@ export interface PerfResult {
   bundleSizeBytes?: number;
 }
 
+export interface ClusterFinding {
+  source: "security" | "duplication" | "graph";
+  severity: string;
+  type: string;
+  description: string;
+  files: string[];
+}
+
+export interface Cluster {
+  rootCause: ClusterFinding;
+  symptoms: ClusterFinding[];
+  sharedFiles: string[];
+  size: number;
+}
+
 export interface ScanResult {
   timestamp: string;
   repo: string;
@@ -56,4 +71,5 @@ export interface ScanResult {
   duplication: DuplicationResult;
   tests: TestsResult;
   perf: PerfResult;
+  clusters: Cluster[];
 }
