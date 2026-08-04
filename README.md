@@ -190,6 +190,7 @@ npx guardian-cli install --uninstall
 | Command | What it does |
 |---------|--------------|
 | `guardian scan [repo]` | Run all analyzers, correlate root causes, print the boxed summary. |
+| `guardian scan [repo] --ledger` | **Opt-in** ledger mode: boots the app, fires replay/double-submit/retry traffic at a mocked gateway, and proves whether payment endpoints double-charge. |
 | `guardian verify [repo]` | Re-run tests/perf, diff against the last baseline, print Regression Risk (exit code 1 on High). |
 | `guardian memory add "..." --type <fix\|decision\|rejection>` | Record a lesson for future scans to recall. |
 | `guardian report [repo]` | Aggregate scan/verify history into `GUARDIAN_REPORT.md` + a boxed terminal summary. |
@@ -212,6 +213,50 @@ npx guardian-cli install --uninstall
   are flagged) and timer/state race-condition heuristics (always labeled as heuristics).
 - **DevEx** — unused exports and near-identical duplicate function bodies, via structural
   source analysis that needs no extra tooling.
+- **Ledger** *(opt-in, `--ledger`)* — discovers money-moving endpoints (charge/capture/
+  payment/transfer/refund/webhook routes and razorpay/stripe/braintree SDK usage), boots the
+  app under a sandbox where **every outbound HTTP call is intercepted**, replays real traffic
+  (duplicate webhook, concurrent double-submit, delayed retry), and proves double-charges from
+  the mock gateway's own receipt log. Any traffic the sandbox cannot intercept aborts the run —
+  nothing ever reaches a real gateway.
+
+---
+
+## Ledger mode (`guardian scan --ledger`)
+
+Most payment bugs are invisible to static analysis: the code *looks* idempotent until two
+requests for the same order actually land. Ledger mode checks the claim at runtime.
+
+1. **Discover.** Static analysis finds money-moving routes and payment-SDK imports
+   (razorpay, stripe, braintree), and maps each SDK to the gateway host it calls.
+2. **Sandbox.** Guardian boots the app under `templates/ledger/preload.cjs`, which injects
+   nock with `disableNetConnect()` — no outbound request can leave the process. Any request
+   the sandbox cannot intercept (unmocked hosts, raw `net`/`tls` sockets, `child_process`
+   binaries, `global fetch`/undici) triggers an **abort** and the run is reported as
+   `aborted` with the reason. The mock gateway records every request/response it receives.
+3. **Attack.** For each discovered endpoint, Guardian replays the three classic
+   idempotency failures — a duplicate webhook 300 ms later, a concurrent double-submit, and a
+   delayed retry — using the endpoint's real contract (amount/currency, idempotency header).
+4. **Prove.** The gateway's receipt log is counted per idempotency key. More than one charge
+   per key is a **proven double-charge**, surfaced as a top-ranked
+   `proven-double-charge` cluster plus a boxed `PROVEN:` line. Full request/response logs land
+   in `.guardian/ledger-evidence-<timestamp>.json`; the raw receipt log lives under
+   `.guardian/ledger/run-<timestamp>/`.
+
+Safety is the contract: ledger mode never fires unless you pass `--ledger`, and the sandbox
+**cannot** be bypassed while active — an app that tries to reach the network outside the mock
+stops the run with `exit 77` before any real call escapes.
+
+Try it against the intentionally-broken companion fixture:
+
+```bash
+npm run build
+node dist/cli.js scan demo-repo-fintech --ledger
+```
+
+The fixture ships an Express + razorpay app whose charge and webhook endpoints have **no
+idempotency guard** — expect three `PROVEN` double-charges (concurrent double-submit, delayed
+retry, and webhook replay), each backed by two real mock-gateway requests in the receipt log.
 
 ---
 

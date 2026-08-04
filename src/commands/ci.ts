@@ -45,7 +45,7 @@ export const ci = new Command("ci")
     let baseSnapshot: string | null = null;
 
     try {
-      const run = runScan(repo);
+      const run = await runScan(repo);
       headResult = run.result;
     } catch (err: any) {
       console.error(`[guardian ci] scan failed: ${err?.message ?? err}`);

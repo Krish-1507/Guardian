@@ -95,11 +95,92 @@ export interface DevexResult {
 }
 
 export interface ClusterFinding {
-  source: "security" | "duplication" | "graph" | "a11y" | "reliability" | "devex";
+  source:
+    | "security"
+    | "duplication"
+    | "graph"
+    | "a11y"
+    | "reliability"
+    | "devex"
+    | "ledger";
   severity: string;
   type: string;
   description: string;
   files: string[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Ledger mode (`guardian scan --ledger`)                               */
+/* ------------------------------------------------------------------ */
+
+/** A money-moving endpoint discovered by the static scan. */
+export interface LedgerEndpoint {
+  method: string;
+  path: string;
+  file?: string;
+  line?: number;
+  framework?: string;
+  /** Keyword that flagged the route (charge/capture/payment/transfer/refund/webhook). */
+  matchedKeyword: string;
+  /** Payment SDK imports seen in the same file. */
+  sdkImports: string[];
+  /** Heuristic expectation of the payload shape. */
+  expectedPayload: {
+    idempotencyKeyHeader?: string;
+    amountField?: string;
+    currencyField?: string;
+    orderIdField?: string;
+  };
+  /** True when this is a webhook-delivery endpoint (duplicate-webhook scenario). */
+  webhook: boolean;
+}
+
+/** One request/response pair that the mocked gateway actually received. */
+export interface LedgerChargeCall {
+  at: string;
+  host: string;
+  method: string;
+  path: string;
+  key: string | null;
+  orderId: string | null;
+  requestId: string;
+  requestHeaders: Record<string, string>;
+  requestBody: unknown;
+  charge: boolean;
+  responseStatus: number;
+  responseBody: unknown;
+}
+
+export type LedgerScenario =
+  | "duplicate-webhook"
+  | "concurrent-double-submit"
+  | "delayed-retry";
+
+/** A proven double-charge (one idempotency key saw >1 gateway charge call). */
+export interface LedgerEvidence {
+  orderId: string;
+  idempotencyKey: string;
+  scenario: LedgerScenario;
+  endpoint: string;
+  endpointFile?: string;
+  doubleCharged: boolean;
+  chargeCalls: LedgerChargeCall[];
+  /** One-line human summary, e.g. "order ord_test_1 charged twice via webhook replay, 340ms apart". */
+  summary: string;
+  evidenceFile?: string;
+}
+
+export interface LedgerResult {
+  status: "ok" | "skipped" | "aborted" | "error";
+  note?: string;
+  /** Endpoints discovered statically. */
+  endpoints: LedgerEndpoint[];
+  /** Proven double-charges observed from the mocked gateway's receipt log. */
+  evidence: LedgerEvidence[];
+  /** Where the mocked gateway recorded what it received. */
+  gatewayLogPath?: string;
+  /** Absolute path of the written evidence file (`.guardian/ledger-evidence-<ts>.json`). */
+  evidenceFile?: string;
 }
 
 export interface Cluster {
@@ -121,5 +202,7 @@ export interface ScanResult {
   accessibility: AccessibilityResult;
   reliability: ReliabilityResult;
   devex: DevexResult;
+  /** Present only when the scan ran with `--ledger`. */
+  ledger?: LedgerResult;
   clusters: Cluster[];
 }

@@ -4,6 +4,7 @@ import boxen from "boxen";
 import path from "node:path";
 import fs from "node:fs";
 import { runAllAnalyzers } from "../analyzers/index.js";
+import { runLedgerAnalyzer } from "../analyzers/ledger/index.js";
 import { correlate } from "../graph/correlate.js";
 import { relevantEntriesForFiles, type MemoryType } from "../memory/store.js";
 import type { ScanResult } from "../analyzers/types.js";
@@ -81,6 +82,30 @@ function renderBox(r: ScanResult): string {
     lines.push(
       `${label("Security")}: ${chalk.yellow("skipped")} — ${sec.note ?? "unavailable"}`,
     );
+  }
+
+  const lg = r.ledger;
+  if (lg) {
+    if (lg.status === "ok") {
+      const proven = lg.evidence.filter((e) => e.doubleCharged);
+      if (proven.length > 0) {
+        const e = proven[0];
+        const evFile = e.evidenceFile
+          ? rel(r.repo, e.evidenceFile)
+          : "";
+        lines.push(
+          `${label("Ledger")}: ${chalk.red(`PROVEN: ${e.summary}`)} — see ${chalk.dim(evFile)} for full request/response logs`,
+        );
+      } else {
+        lines.push(
+          `${label("Ledger")}: ${chalk.green(`${lg.endpoints.length} endpoint(s) probed`)} — 0 double-charges (idempotency holds)`,
+        );
+      }
+    } else {
+      lines.push(
+        `${label("Ledger")}: ${chalk.yellow(lg.status)} — ${lg.note ?? "ledger mode aborted"}`,
+      );
+    }
   }
 
   if (r.clusters.length > 0) {
@@ -219,8 +244,17 @@ function renderBox(r: ScanResult): string {
   });
 }
 
-export function runScan(repo: string): { result: ScanResult; file: string } {
+export async function runScan(
+  repo: string,
+  opts?: { ledger?: boolean },
+): Promise<{ result: ScanResult; file: string }> {
   const result = runAllAnalyzers(repo);
+
+  // Ledger mode is invasive (it boots the app and probes live endpoints), so it
+  // never runs unless explicitly requested via `--ledger`.
+  if (opts?.ledger) {
+    result.ledger = await runLedgerAnalyzer(repo);
+  }
 
   const { clusters } = correlate(repo, result);
   result.clusters = clusters;
@@ -237,11 +271,19 @@ export function runScan(repo: string): { result: ScanResult; file: string } {
 export const scan = new Command("scan")
   .description("Scan a repo for dependency, security, duplication, test and performance issues")
   .argument("[repo]", "path to the repo to scan", ".")
-  .action(async (repoArg: string) => {
+  .option(
+    "--ledger",
+    "opt-in, invasive: boot the app under a nock sandbox and probe money-moving " +
+      "endpoints (charge/capture/payment/transfer/refund/webhook) for missing " +
+      "idempotency. Never runs unless --ledger is passed.",
+  )
+  .action(async (repoArg: string, options: { ledger?: boolean }) => {
     const repo = path.resolve(repoArg);
-    console.log(chalk.cyan(`\nScanning ${repo} ...\n`));
+    console.log(
+      chalk.cyan(`\nScanning ${repo}${options.ledger ? " with --ledger" : ""} ...\n`),
+    );
 
-    const { result, file } = runScan(repo);
+    const { result, file } = await runScan(repo, { ledger: options.ledger });
 
     console.log(renderBox(result));
     console.log(chalk.dim(`\nReports written to ${file}\n`));

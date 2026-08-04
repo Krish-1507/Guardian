@@ -223,5 +223,33 @@ export function correlate(
   }
 
   clusters.sort((a, b) => b.size - a.size);
+
+  // A PROVEN double-charge from ledger mode is always the top-ranked cluster.
+  // Ledger findings are never merged into the heuristic clusters: they are
+  // observed facts (the mocked gateway was actually hit twice), not guesses, so
+  // they lead the report unconditionally.
+  const ledgerClusters = buildLedgerClusters(repo, r);
+  if (ledgerClusters.length > 0) clusters.unshift(...ledgerClusters);
+
   return { clusters, findings };
+}
+
+function buildLedgerClusters(repo: string, r: ScanResult): Cluster[] {
+  if (!r.ledger || r.ledger.evidence.length === 0) return [];
+  return r.ledger.evidence.map((ev) => {
+    const files = ev.endpointFile ? [ev.endpointFile] : [];
+    const rootCause: ClusterFinding = {
+      source: "ledger",
+      severity: "critical",
+      type: "proven-double-charge",
+      description: ev.summary,
+      files,
+    };
+    return {
+      rootCause,
+      symptoms: [],
+      sharedFiles: files,
+      size: 1,
+    };
+  });
 }
