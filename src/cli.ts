@@ -7,6 +7,7 @@ import { memory } from "./commands/memory.js";
 import { report } from "./commands/report.js";
 import { demo } from "./commands/demo.js";
 import { ci } from "./commands/ci.js";
+import { reproCmd } from "./commands/repro.js";
 
 const program = new Command();
 
@@ -22,5 +23,6 @@ program.addCommand(memory);
 program.addCommand(report);
 program.addCommand(demo);
 program.addCommand(ci);
+program.addCommand(reproCmd);
 
 program.parseAsync(process.argv);

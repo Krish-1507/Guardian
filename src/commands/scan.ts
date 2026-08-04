@@ -7,6 +7,7 @@ import { runAllAnalyzers } from "../analyzers/index.js";
 import { runLedgerAnalyzer } from "../analyzers/ledger/index.js";
 import { correlate } from "../graph/correlate.js";
 import { relevantEntriesForFiles, type MemoryType } from "../memory/store.js";
+import { stampFindings, findingIdFor } from "../repro/ids.js";
 import type { ScanResult } from "../analyzers/types.js";
 
 function memTypeColor(t: MemoryType): (s: string) => string {
@@ -72,10 +73,9 @@ function renderBox(r: ScanResult): string {
           ? ` (${rel(r.repo, i.file)}${i.line ? ":" + i.line : ""})`
           : "";
         lines.push(
-          `${label("Security")}: ${chalk.red(`${sec.issues.length} issues`)} — ${i.severity} ${i.type}: ${i.description}${loc}`,
+          `${label("Security")}: ${chalk.red(`${sec.issues.length} issues`)} — ${i.severity} ${i.type}: ${i.description}${loc} [${chalk.dim(findingIdFor("security", i.type, i.file, i.description))}]`,
         );
-      }
-    } else {
+      }    } else {
       lines.push(`${label("Security")}: ${chalk.green("0 issues")} — clean`);
     }
   } else {
@@ -115,7 +115,7 @@ function renderBox(r: ScanResult): string {
       `${label("Root Causes")}: ${r.clusters.length} root cause(s) → ${totalSymptoms} symptom(s)`,
     );
     r.clusters.slice(0, 3).forEach((c, i) => {
-      const rc = `${c.rootCause.severity.toUpperCase()} ${c.rootCause.type}`;
+      const rc = `${c.rootCause.severity.toUpperCase()} ${c.rootCause.type}${c.rootCause.id ? ` [${c.rootCause.id}]` : ""}`;
       const shared = c.sharedFiles.slice(0, 3).join(", ");
       lines.push(`    ${i + 1}. ${chalk.red(rc)}: ${c.rootCause.description}`);
       lines.push(
@@ -255,6 +255,10 @@ export async function runScan(
   if (opts?.ledger) {
     result.ledger = await runLedgerAnalyzer(repo);
   }
+
+  // Stable finding ids first, so clusters and scan-latest.json carry the ids
+  // that `guardian repro <id>` (and committed repro tests) reference.
+  stampFindings(result);
 
   const { clusters } = correlate(repo, result);
   result.clusters = clusters;

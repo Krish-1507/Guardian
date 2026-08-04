@@ -191,6 +191,7 @@ npx guardian-cli install --uninstall
 |---------|--------------|
 | `guardian scan [repo]` | Run all analyzers, correlate root causes, print the boxed summary. |
 | `guardian scan [repo] --ledger` | **Opt-in** ledger mode: boots the app, fires replay/double-submit/retry traffic at a mocked gateway, and proves whether payment endpoints double-charge. |
+| `guardian repro <finding-id> [repo]` | Turn a captured finding into a permanent failing test: generate a repro, run it, and get a boxed FAIL/PASS verdict (exit 0 = bug not reproduced, exit 1 = bug reproduced). `-w` / `--write-only` writes the test without running it. |
 | `guardian verify [repo]` | Re-run tests/perf, diff against the last baseline, print Regression Risk (exit code 1 on High). |
 | `guardian memory add "..." --type <fix\|decision\|rejection>` | Record a lesson for future scans to recall. |
 | `guardian report [repo]` | Aggregate scan/verify history into `GUARDIAN_REPORT.md` + a boxed terminal summary. |
@@ -257,6 +258,38 @@ node dist/cli.js scan demo-repo-fintech --ledger
 The fixture ships an Express + razorpay app whose charge and webhook endpoints have **no
 idempotency guard** — expect three `PROVEN` double-charges (concurrent double-submit, delayed
 retry, and webhook replay), each backed by two real mock-gateway requests in the receipt log.
+
+---
+
+## Reproduce before you fix (`guardian repro <finding-id>`)
+
+Guardian never fixes a bug it hasn't first captured as a failing test. Every finding is stamped
+with a deterministic id (`ledger-18f7bcc7`, `security-19c390c6`, …) shown in the scan box and
+stored in `.guardian/scan-latest.json`. `guardian repro` turns one into a permanent repro test:
+
+```bash
+node dist/cli.js scan demo-repo-fintech --ledger   # shows [ledger-18f7bcc7] etc.
+node dist/cli.js repro ledger-18f7bcc7 demo-repo-fintech
+```
+
+What happens:
+
+1. **Resolve** the finding id from `.guardian/scan-latest.json`.
+2. **Generate** a `guardian-repro-<slug>.test.{js,mjs,py}` file that replays the exact bug
+   (ledger boot under the sandbox via `GUARDIAN_LEDGER_PRELOAD`, the verified lodash
+   CVE-2021-23337 exploit, a parallel race probe, or a perf threshold against the Phase-1
+   baseline). Guardian never fabricates a repro it can't make genuinely fail — unverified
+   recipes are **refused** rather than faked.
+3. **Run** the test file with the repo's real test framework (jest, vitest, node `--test`,
+   pytest).
+4. **Verdict** — a boxed `FAIL — bug reproduced` (exit 1) means the bug is real and captured;
+   `PASS — bug not reproduced` (exit 0) means the hypothesis is unproven, so the loop must
+   re-diagnose instead of fixing blind.
+
+The loop in `templates/guardian.prompt.md` makes this step **mandatory before any fix**, then
+re-runs the *same* repro test after the fix and requires it to PASS. The committed test file is
+a permanent regression guard, and `guardian report` lists every one under **Fixes shipped with
+permanent proof**.
 
 ---
 

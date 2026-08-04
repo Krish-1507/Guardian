@@ -66,6 +66,51 @@ export interface MetricLine {
   color?: "green" | "yellow" | "red" | "dim";
 }
 
+/** A committed repro test that permanently proves a fix. */
+export interface ReproProof {
+  /** Relative path of the guardian-repro-*.test.* file. */
+  file: string;
+  /** The finding id (from scan-latest.json) its header links back to. */
+  findingId?: string;
+}
+
+const REPRO_TEST_RE = /^guardian-repro-.+\.test\.(mjs|js|ts|py)$/;
+const REPRO_ID_RE = /\b(?:guardian repro|finding)[^\w-]*([A-Za-z][A-Za-z0-9]*-[0-9a-f]{6,})/i;
+
+/** Scan the repo for committed permanent proof files. */
+export function loadProofs(repo: string): ReproProof[] {
+  const out: ReproProof[] = [];
+  const stack: string[] = [repo];
+  const ignore = new Set(["node_modules", ".git", ".guardian", "dist", "coverage", ".next"]);
+  while (stack.length) {
+    const dir = stack.pop() as string;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (!ignore.has(e.name) && !e.name.startsWith(".")) stack.push(path.join(dir, e.name));
+      } else if (e.isFile() && REPRO_TEST_RE.test(e.name)) {
+        const abs = path.join(dir, e.name);
+        let findingId: string | undefined;
+        try {
+          const head = fs.readFileSync(abs, "utf8").slice(0, 1200);
+          const m = head.match(REPRO_ID_RE);
+          if (m && m[1]) findingId = m[1];
+        } catch {
+          /* ignore */
+        }
+        out.push({ file: path.relative(repo, abs), findingId });
+      }
+    }
+  }
+  out.sort((a, b) => (a.file < b.file ? -1 : 1));
+  return out;
+}
+
 export interface ReportModel {
   repo: string;
   generatedAt: string;
@@ -76,6 +121,8 @@ export interface ReportModel {
   lines: MetricLine[];
   clusters: Cluster[];
   hasVerify: boolean;
+  /** Committed repro tests that permanently prove each fix. */
+  proofs: ReproProof[];
 }
 
 const NOT_SCANNED = "not scanned";
@@ -234,6 +281,7 @@ export function buildModel(repo: string): ReportModel {
     lines,
     clusters: latestScan?.clusters ?? [],
     hasVerify: !!latestVerify,
+    proofs: loadProofs(repo),
   };
 }
 
@@ -263,8 +311,13 @@ export function renderTerminal(model: ReportModel): string {
     return `  ${chalk.bold(l.label.padEnd(24))}: ${colorFn(l.value)}`;
   });
 
+  const proofLine =
+    model.proofs.length > 0
+      ? `  ${chalk.bold("Permanent proof".padEnd(24))}: ${chalk.green(`${model.proofs.length} repro test(s) shipped with fixes`)}`
+      : `  ${chalk.bold("Permanent proof".padEnd(24))}: ${chalk.yellow("none — no guardian-repro-*.test.* committed")}`;
+
   const header = `${chalk.dim(`repo: ${model.repo}`)}  ·  ${chalk.dim(`${model.scansCount} scan(s), ${model.verifiesCount} verify(ies)`)}`;
-  const content = [header, "", ...lines].join("\n");
+  const content = [header, "", ...lines, proofLine].join("\n");
 
   return boxen(content, {
     title: " GUARDIAN — Repository Analysis Complete ",
@@ -393,6 +446,28 @@ function beforeAfterSection(model: ReportModel): string[] {
   return out;
 }
 
+function proofSection(proofs: ReproProof[]): string[] {
+  const out: string[] = [];
+  out.push(`## Fixes shipped with permanent proof`);
+  out.push("");
+  if (proofs.length === 0) {
+    out.push(`No \`guardian-repro-*.test.*\` files are committed. Every fix in the loop is`);
+    out.push(`supposed to ship with a permanent repro test that proves it — their absence is a`);
+    out.push(`red flag that fixes went out without a captured failing-then-passing proof.`);
+    out.push("");
+    return out;
+  }
+  out.push(`One line per committed fix, linking the test that permanently proves it:`);
+  out.push("");
+  out.push(`| Finding | Proved by |`);
+  out.push(`| --- | --- |`);
+  for (const p of proofs) {
+    out.push(`| \`${p.findingId ?? "?"}\` | \`${p.file}\` |`);
+  }
+  out.push("");
+  return out;
+}
+
 function notesSection(): string[] {
   return [
     `## Notes`,
@@ -424,6 +499,7 @@ export function renderMarkdown(model: ReportModel, opts: MarkdownOptions = {}): 
   }
 
   out.push(...beforeAfterSection(model));
+  out.push(...proofSection(model.proofs));
   out.push(...notesSection());
 
   return out.join("\n");

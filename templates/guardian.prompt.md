@@ -52,7 +52,7 @@ fixes, do not touch anything yet.
 
 ## Step 3 — Autonomous fix loop (runs after confirmation)
 
-For each iteration, do all of (a)–(j) without asking for confirmation again:
+For each iteration, do all of (a)–(l) without asking for confirmation again:
 
 **a. Pick the cluster.** Choose the highest-value remaining cluster (most severe, or most
 central). Skip any the user excluded.
@@ -67,36 +67,59 @@ and `<date>` is `YYYY-MM-DD`. Never branch off or commit to `main`.
 **c. State your hypothesis.** In one or two sentences, say *why* you believe this cluster's
 root cause is what the scanner claims it is, and what a minimal correct fix looks like.
 
-**d. Make the smallest fix.** Using your own file-edit tools, change the minimum needed to
+**d. Capture the bug as a failing test — mandatory, never skippable.**
+
+`!npx guardian-cli repro <finding-id>`
+
+`<finding-id>` is the id printed on the cluster's line in the scan box (and stored in
+`.guardian/scan-latest.json`), e.g. `ledger-3f9a2c01`. Guardian writes a permanent repro
+test (`guardian-repro-<slug>.test.*`) and runs it:
+
+- If it reports **FAIL — bug reproduced**, you have *proven* the bug with a real failing
+  test. Good. Proceed.
+- If it reports **PASS**, or **refused** with no genuine repro generator, the hypothesis is
+  **UNPROVEN**. Do **not** fix blind. Stop, return to (c), and either revise the hypothesis
+  or pick a different cluster.
+
+**e. Make the smallest fix.** Using your own file-edit tools, change the minimum needed to
 address the **root cause** (not just a symptom). Stay on the `guardian/*` branch.
 
-**e. Verify.**
+**f. Prove the same test now passes — mandatory, before any verify.**
+
+`!npx guardian-cli repro <finding-id>`
+
+Run the **same** repro test. It must now report **PASS**.
+If it still **FAILS**, the fix did not address the root cause: revert, revise the hypothesis
+in (c), and retry once (see (h)).
+
+**g. Verify.**
 
 `!npx guardian-cli verify`
 
 Read the result, especially the Regression Risk and the Δ columns.
 
-**f. If Regression Risk is High:** `git checkout` (or otherwise revert) your change, note
+**h. If Regression Risk is High:** `git checkout` (or otherwise revert) your change, note
 that this hypothesis failed, and try **once more** with a different approach for the **same**
 cluster. Maximum 2 attempts per cluster, then move on.
 
-**g. If Risk is Low/Medium and tests are not newly failing:** commit with a clear message
-describing the root cause and fix, then record it:
+**i. If Risk is Low/Medium and tests are not newly failing:** commit with a clear message
+describing the root cause and fix. Commit the repro test **together with** the fix — it is a
+**permanent regression guard**, never a throwaway, and never delete it. Then record it:
 
-`!npx guardian-cli memory add "..." --type fix`
+`!npx guardian-cli memory add "<finding-id> fixed + proven by guardian-repro-<slug>" --type fix`
 
 (keep the summary short and factual — this is the "six months later" recall.)
 
-**h. Re-scan and show a shorter status.** Run the scan again — this is the "check again"
-loop — and print a **short updated boxed status** in the same visual style as Step 1,
-showing: issues fixed so far, issues remaining. No long commentary.
+**j. Re-scan and show a shorter status.** Run the scan again and print a short updated
+boxed status in the same visual style as Step 1, showing: issues fixed so far, issues
+remaining. No long commentary.
 
-**i. Success check.** If the fresh scan shows **zero remaining actionable clusters**,
+**k. Success check.** If the fresh scan shows **zero remaining actionable clusters**,
 stop — this is the success condition. Your final line should be:
 
 `nothing left to fix, nothing broken.`
 
-**j. Otherwise repeat.** Go back to (a) automatically. You do **not** ask for confirmation
+**l. Otherwise repeat.** Go back to (a) automatically. You do **not** ask for confirmation
 again. The loop pauses only once, at Step 2, before the very first fix.
 
 ---
@@ -133,4 +156,6 @@ On **any** stop condition (success, max iterations, or timeout), run:
 `!npx guardian-cli report`
 
 and present the resulting **`GUARDIAN_REPORT.md` / boxed output verbatim** as your final
-message. Do not rewrite or summarize it.
+message. Do not rewrite or summarize it. The report includes **"Fixes shipped with permanent
+proof"**: one line per committed fix, linking the `guardian-repro-*.test.*` file that proves
+it — if a fix has no committed repro test, that is a red flag the loop was cut short.

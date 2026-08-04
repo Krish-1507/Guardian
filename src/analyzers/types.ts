@@ -4,6 +4,8 @@ export interface ScanIssue {
   file?: string;
   line?: number;
   description: string;
+  /** Stable, deterministic finding id (used by `guardian repro`). */
+  id?: string;
 }
 
 export interface DependencyGraphResult {
@@ -45,6 +47,8 @@ export interface PerfResult {
   note?: string;
   buildTimeMs?: number;
   bundleSizeBytes?: number;
+  /** Stable id for the perf baseline finding (used by `guardian repro`). */
+  id?: string;
 }
 
 export interface AccessibilityResult {
@@ -61,6 +65,8 @@ export interface FlakyTest {
   file?: string;
   /** Outcome per sequential run (length === runs). */
   statuses: ("passed" | "failed")[];
+  /** Stable, deterministic finding id. */
+  id?: string;
 }
 
 export interface ReliabilityResult {
@@ -107,6 +113,8 @@ export interface ClusterFinding {
   type: string;
   description: string;
   files: string[];
+  /** Stable finding id — links a cluster back to scan-latest.json and `guardian repro`. */
+  id?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -168,6 +176,8 @@ export interface LedgerEvidence {
   /** One-line human summary, e.g. "order ord_test_1 charged twice via webhook replay, 340ms apart". */
   summary: string;
   evidenceFile?: string;
+  /** Stable finding id (used by `guardian repro`). */
+  id?: string;
 }
 
 export interface LedgerResult {

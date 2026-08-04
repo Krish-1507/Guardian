@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildEdges } from "../analyzers/dependencyGraph.js";
 import type { ScanResult, Cluster, ClusterFinding } from "../analyzers/types.js";
+import { findingIdFor, ledgerFindingId } from "../repro/ids.js";
 
 /**
  * HEURISTIC (not magic):
@@ -38,6 +39,7 @@ export function collectFindings(repo: string, r: ScanResult): ClusterFinding[] {
 
   for (const i of r.security.issues) {
     findings.push({
+      id: findingIdFor("security", i.type, i.file, i.description),
       source: "security",
       severity: i.severity,
       type: i.type,
@@ -48,6 +50,7 @@ export function collectFindings(repo: string, r: ScanResult): ClusterFinding[] {
 
   for (const c of r.duplication.clones) {
     findings.push({
+      id: findingIdFor("duplication", "duplication", c.files[0], `${c.lines}`),
       source: "duplication",
       severity: "low",
       type: "duplication",
@@ -59,6 +62,7 @@ export function collectFindings(repo: string, r: ScanResult): ClusterFinding[] {
   for (const cyc of r.dependencyGraph.circular) {
     const files = cyc.map((f) => path.relative(repo, f));
     findings.push({
+      id: findingIdFor("graph", "circular", cyc[0], files.join(" → ")),
       source: "graph",
       severity: "medium",
       type: "circular",
@@ -69,6 +73,7 @@ export function collectFindings(repo: string, r: ScanResult): ClusterFinding[] {
 
   for (const i of r.accessibility.issues) {
     findings.push({
+      id: findingIdFor("a11y", i.type, i.file, i.description),
       source: "a11y",
       severity: i.severity,
       type: "a11y",
@@ -79,6 +84,7 @@ export function collectFindings(repo: string, r: ScanResult): ClusterFinding[] {
 
   for (const f of r.reliability.flakyTests) {
     findings.push({
+      id: findingIdFor("reliability", "flaky-test", f.file, f.name),
       source: "reliability",
       severity: "warning",
       type: "flaky-test",
@@ -89,6 +95,7 @@ export function collectFindings(repo: string, r: ScanResult): ClusterFinding[] {
 
   for (const i of r.reliability.raceSmells) {
     findings.push({
+      id: findingIdFor("reliability", "race-condition", i.file, i.description),
       source: "reliability",
       severity: i.severity,
       type: "race-condition",
@@ -99,6 +106,7 @@ export function collectFindings(repo: string, r: ScanResult): ClusterFinding[] {
 
   for (const i of r.devex.unusedExports) {
     findings.push({
+      id: findingIdFor("devex", "unused-export", i.file, i.description),
       source: "devex",
       severity: i.severity,
       type: "unused-export",
@@ -109,6 +117,12 @@ export function collectFindings(repo: string, r: ScanResult): ClusterFinding[] {
 
   for (const d of r.devex.duplicateFunctions) {
     findings.push({
+      id: findingIdFor(
+        "devex",
+        "duplicate-function",
+        d.files[0]?.file,
+        `${d.name}@${d.files[0]?.file}`,
+      ),
       source: "devex",
       severity: "medium",
       type: "duplicate-function",
@@ -239,6 +253,7 @@ function buildLedgerClusters(repo: string, r: ScanResult): Cluster[] {
   return r.ledger.evidence.map((ev) => {
     const files = ev.endpointFile ? [ev.endpointFile] : [];
     const rootCause: ClusterFinding = {
+      id: ledgerFindingId(ev),
       source: "ledger",
       severity: "critical",
       type: "proven-double-charge",
