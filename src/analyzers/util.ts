@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -24,6 +24,34 @@ export function safeExec(
 ): { code: number; stdout: string; stderr: string } {
   try {
     const stdout = execFileSync(file, args, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: timeoutMs,
+      windowsHide: true,
+      maxBuffer: 50 * 1024 * 1024,
+    });
+    return { code: 0, stdout, stderr: "" };
+  } catch (err: any) {
+    return {
+      code: typeof err.status === "number" ? err.status : -1,
+      stdout: err.stdout?.toString() ?? "",
+      stderr: err.stderr?.toString() ?? "",
+    };
+  }
+}
+
+/**
+ * Run a shell command (needed for shell redirection, e.g. `npm audit --json >
+ * file`, which pipe-capture fails to retrieve on some platforms).
+ */
+export function safeExecShell(
+  command: string,
+  cwd: string,
+  timeoutMs = 120000,
+): { code: number; stdout: string; stderr: string } {
+  try {
+    const stdout = execSync(command, {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],

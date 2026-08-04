@@ -52,20 +52,41 @@ export function analyzeTests(repo: string): TestsResult {
     fs.existsSync(path.join(repo, "jest.config.ts"));
   const hasVitest = !!deps.vitest || fs.existsSync(path.join(repo, "vitest.config.ts"));
 
-  if (hasJest && commandExists("jest")) {
+  const hasBin = (name: string) =>
+    commandExists(name) || fs.existsSync(path.join(repo, "node_modules", ".bin", name));
+
+  if (hasJest && hasBin("jest")) {
     return runJest(repo);
   }
-  if (hasVitest && commandExists("vitest")) {
+  if (hasVitest && hasBin("vitest")) {
     return runVitest(repo);
   }
   return empty;
 }
 
+function jestCommand(repo: string): { cmd: string; args: string[] } {
+  if (commandExists("jest")) return { cmd: "jest", args: [] };
+  const localCli = path.join(repo, "node_modules", "jest", "bin", "jest.js");
+  if (fs.existsSync(localCli)) return { cmd: "node", args: [localCli] };
+  return { cmd: "", args: [] };
+}
+
 function runJest(repo: string): TestsResult {
+  const j = jestCommand(repo);
+  if (!j.cmd) {
+    return {
+      status: "skipped",
+      note: "jest not installed",
+      total: 0,
+      passed: 0,
+      failed: 0,
+      durationMs: 0,
+    };
+  }
   const start = performance.now();
   const r = safeExec(
-    "jest",
-    ["--json", "--coverage", "--coverageReporters=json-summary"],
+    j.cmd,
+    [...j.args, "--json", "--coverage", "--coverageReporters=json-summary"],
     repo,
     180000,
   );
@@ -105,13 +126,31 @@ function runJest(repo: string): TestsResult {
   };
 }
 
+function vitestCommand(repo: string): { cmd: string; args: string[] } {
+  if (commandExists("vitest")) return { cmd: "vitest", args: [] };
+  const localCli = path.join(repo, "node_modules", "vitest", "vitest.mjs");
+  if (fs.existsSync(localCli)) return { cmd: "node", args: [localCli] };
+  return { cmd: "", args: [] };
+}
+
 function runVitest(repo: string): TestsResult {
+  const v = vitestCommand(repo);
+  if (!v.cmd) {
+    return {
+      status: "skipped",
+      note: "vitest not installed",
+      total: 0,
+      passed: 0,
+      failed: 0,
+      durationMs: 0,
+    };
+  }
   const tmp = path.join(repo, ".guardian", "vitest-report.json");
   fs.mkdirSync(path.dirname(tmp), { recursive: true });
   const start = performance.now();
   const r = safeExec(
-    "vitest",
-    ["run", "--reporter=json", "--outputFile", tmp],
+    v.cmd,
+    [...v.args, "run", "--reporter=json", "--outputFile", tmp],
     repo,
     180000,
   );
