@@ -14,24 +14,23 @@ nothing is left to fix.
 
 ## Watch it run
 
-> **Placeholder — replace with your real GIF or asciinema embed.**
-> Record the exact flow below (clone → install → `/guardian` → box appears → hit enter → watch it loop):
+![Guardian demo: scan → confirm → autonomous fix loop → final report](docs/demo.gif)
 
-```asciinema
-$ git clone https://github.com/Krish-1507/Guardian.git
-$ cd Guardian
-$ npm install
-$ node dist/cli.js demo          # or: npx guardian-cli demo — spins up the broken demo repo
-$ npx guardian-cli install        # drops the /guardian command into your tool
-$ <open the repo in Claude Code / Cursor / OpenCode / Kilo Code / Codex>
-$ /guardian                      # a boxed scan summary appears...
-<Enter>                           # ...you confirm once...
-$ <watch the autonomous loop: fix → verify → re-scan → repeat>
+A real, unedited run of the whole loop. `guardian scan` prints the boxed root-cause summary,
+you confirm once, then the agent branches, fixes, verifies, re-scans, and stops only when the
+repo is clean — `nothing left to fix, nothing broken.` A final `guardian report` writes
+`GUARDIAN_REPORT.md`.
+
+Run it yourself in under two minutes:
+
+```bash
+git clone https://github.com/Krish-1507/Guardian.git && cd Guardian
+npm install
+npx guardian-cli demo      # copies the intentionally-broken demo repo to a temp dir
+# open that repo in Claude Code / Cursor / OpenCode / Kilo Code / Codex, then:
+/guardian                  # a boxed scan summary appears...
+<Enter>                    # ...you confirm once, and watch it loop
 ```
-
-Asciinema embed (replace `XXXX` with your cast id):
-
-[![asciicast](https://asciinema.org/a/XXXX.svg)](https://asciinema.org/a/XXXX)
 
 ---
 
@@ -201,6 +200,12 @@ npm run dev        # tsx watch src/cli.ts
 TypeScript, ESM, zero test framework dependency in the CLI itself. The packaged tarball
 ships `dist/`, `templates/`, and `demo-repo/` — see the CI badge above for build + smoke
 test status.
+
+## Contributing
+
+Guardian is built to be extended — adding a whole new analyzer is a ~10-minute change.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the analyzer interface, conventions, and how to
+open a PR. For the launch notes and the "why", read [LAUNCH.md](LAUNCH.md).
 
 ## License
 
