@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { dirSize, safeExec } from "./util.js";
+import { dirSize, safeExecShell } from "./util.js";
 import type { PerfResult } from "./types.js";
 
 export function analyzePerf(repo: string): PerfResult {
@@ -20,7 +20,14 @@ export function analyzePerf(repo: string): PerfResult {
   }
 
   const start = performance.now();
-  safeExec("npm", ["run", "build"], repo, 240000);
+  const build = safeExecShell("npm run build", repo, 240000);
+  if (build.code !== 0) {
+    return {
+      status: "skipped",
+      note: "build script present but `npm run build` failed (see stderr)",
+      stderr: build.stderr,
+    };
+  }
   const buildTimeMs = Math.round(performance.now() - start);
 
   let outDir = "dist";

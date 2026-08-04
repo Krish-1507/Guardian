@@ -1,6 +1,4 @@
-{
-  "node_modules/",
-  "coverage/",
-  ".guardian/",
-  "*.tgz"
-}
+node_modules/
+coverage/
+.guardian/
+*.tgz

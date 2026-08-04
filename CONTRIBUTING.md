@@ -22,8 +22,11 @@ src/analyzers/        one file per analyzer (the Phase-1 scan dimension)
   types.ts            every analyzer's result type + ClusterFinding + ScanResult
   index.ts            runAllAnalyzers() — the registration point
   util.ts             shared helpers (walkFiles, safeExec, commandExists, lineOf, ...)
+src/analyzers/integrity/  diff-scoped AI-agent-cheat detectors (testTamper, exceptionSwallow,
+  suppressionCreep, hardcodedMatch, mockOverreach, exitCheat) — wired into `guardian verify`
 src/graph/correlate.ts   flattens findings into ClusterFinding[] and clusters them
-src/commands/         the CLI surface (scan, verify, report, memory, demo, ci, install)
+src/graph/integrity.ts   combines detector output into one verdict (CLEAN/SUSPICIOUS/CONFIRMED_CHEAT)
+src/commands/         the CLI surface (scan, verify, integrity, report, memory, demo, ci, install)
 src/report/format.ts  GUARDIAN_REPORT.md + boxed renderers
 src/verify/metrics.ts verify metrics + Regression Risk classification
 templates/guardian.prompt.md  the /guardian slash-command that drives the agent

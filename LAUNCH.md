@@ -34,7 +34,8 @@ one thing it noticed and declares victory. Guardian gives it an honest feedback 
    you approve.
 3. **Loop** → the agent branches to `guardian/*`, states a hypothesis, makes the *smallest*
    fix, runs `guardian verify` (re-runs tests and diffs against the baseline → **Regression
-   Risk**), commits, and re-scans.
+   Risk**, gated by the **integrity gate** that scans the diff for AI-agent-cheat patterns),
+   commits, and re-scans.
 4. **Stop** → a fresh scan showing **zero actionable clusters** ends it:
    `nothing left to fix, nothing broken.` Then `guardian report` writes `GUARDIAN_REPORT.md`.
 
@@ -46,6 +47,10 @@ one thing it noticed and declares victory. Guardian gives it an honest feedback 
   the repo? It says so. You always know what was and wasn't checked.
 - **Heuristics are labeled.** Race-condition smells and duplicate-function detection are
   structural guesses and are marked as such — never presented as certainty.
+- **The agent can't cheat its own referee.** Every `verify` also diffs the change against HEAD
+  and flags deleted/loosened tests, swallowed errors, suppression comments, hardcoded-to-pass
+  values, and forced exits. SUSPICIOUS reverts and retries the same cluster once with a stricter
+  "solve the root cause" instruction; CONFIRMED_CHEAT goes straight to a human.
 - **Hard safety rules** are baked into the prompt: no force-pushes, no `.env`, no deleting
   files with incoming references, everything on a `guardian/*` branch.
 - **Memory.** Every fix it makes is recorded and recalled on later scans, so the loop gets

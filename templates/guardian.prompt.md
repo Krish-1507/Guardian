@@ -52,7 +52,7 @@ fixes, do not touch anything yet.
 
 ## Step 3 — Autonomous fix loop (runs after confirmation)
 
-For each iteration, do all of (a)–(l) without asking for confirmation again:
+For each iteration, do all of (a)–(m) without asking for confirmation again:
 
 **a. Pick the cluster.** Choose the highest-value remaining cluster (most severe, or most
 central). Skip any the user excluded.
@@ -90,36 +90,59 @@ address the **root cause** (not just a symptom). Stay on the `guardian/*` branch
 
 Run the **same** repro test. It must now report **PASS**.
 If it still **FAILS**, the fix did not address the root cause: revert, revise the hypothesis
-in (c), and retry once (see (h)).
+in (c), and retry once (see (i)).
 
 **g. Verify.**
 
 `!npx guardian-cli verify`
 
-Read the result, especially the Regression Risk and the Δ columns.
+Read the result, especially the **Integrity gate** line, the Regression Risk, and the Δ
+columns. This verify run is also the integrity gate: it diffs your uncommitted change against
+HEAD and runs the AI-agent-cheat detectors (deleted/loosened tests, swallowed errors,
+suppressions, hardcoded-to-pass values, forced exits).
 
-**h. If Regression Risk is High:** `git checkout` (or otherwise revert) your change, note
-that this hypothesis failed, and try **once more** with a different approach for the **same**
-cluster. Maximum 2 attempts per cluster, then move on.
+**h. Integrity gate — mandatory, never skippable.** Inspect the "Integrity gate:" verdict
+in the verify box and branch exactly like this:
 
-**i. If Risk is Low/Medium and tests are not newly failing:** commit with a clear message
-describing the root cause and fix. Commit the repro test **together with** the fix — it is a
-**permanent regression guard**, never a throwaway, and never delete it. Then record it:
+- **CLEAN** → proceed to (i) as normal.
+- **SUSPICIOUS** → do **not** commit. Explicitly state in your response what was flagged and
+  why (detector, `file:line`, evidence). Revert the change. Retry the **SAME** cluster exactly
+  **once**, with this instruction appended verbatim to your working notes:
+
+  > "Your previous attempt touched a test or added error suppression in a way that looks like it
+  > avoided the real fix instead of solving it. Solve the root cause. Do not modify, skip, or
+  > loosen any test. Do not add suppression comments or swallow exceptions."
+
+  Repeat (c)–(g) with that instruction. If the retry is **also SUSPICIOUS**, stop trying this
+  cluster, mark it **"requires human review"** in the final report, and move to the next cluster —
+  never loop indefinitely on the same pattern.
+- **CONFIRMED_CHEAT** → do **not** commit. State what was flagged. Revert. Skip straight to
+  **"requires human review"** with **zero retries** — this tier is unambiguous enough that
+  retrying isn't warranted; a human should look at it. Move to the next cluster.
+
+**i. If Regression Risk is High** (and the integrity gate was CLEAN): `git checkout` (or
+otherwise revert) your change, note that this hypothesis failed, and try **once more** with a
+different approach for the **same** cluster. Maximum 2 attempts per cluster, then move on.
+
+**j. If Risk is Low/Medium, tests are not newly failing, and the integrity gate is CLEAN:**
+commit with a clear message describing the root cause and fix. Commit the repro test **together
+with** the fix — it is a **permanent regression guard**, never a throwaway, and never delete it.
+Then record it:
 
 `!npx guardian-cli memory add "<finding-id> fixed + proven by guardian-repro-<slug>" --type fix`
 
 (keep the summary short and factual — this is the "six months later" recall.)
 
-**j. Re-scan and show a shorter status.** Run the scan again and print a short updated
+**k. Re-scan and show a shorter status.** Run the scan again and print a short updated
 boxed status in the same visual style as Step 1, showing: issues fixed so far, issues
 remaining. No long commentary.
 
-**k. Success check.** If the fresh scan shows **zero remaining actionable clusters**,
+**l. Success check.** If the fresh scan shows **zero remaining actionable clusters**,
 stop — this is the success condition. Your final line should be:
 
 `nothing left to fix, nothing broken.`
 
-**l. Otherwise repeat.** Go back to (a) automatically. You do **not** ask for confirmation
+**m. Otherwise repeat.** Go back to (a) automatically. You do **not** ask for confirmation
 again. The loop pauses only once, at Step 2, before the very first fix.
 
 ---

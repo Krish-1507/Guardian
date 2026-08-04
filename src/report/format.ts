@@ -3,6 +3,7 @@ import path from "node:path";
 import chalk from "chalk";
 import boxen from "boxen";
 import type { ScanResult, Cluster } from "../analyzers/types.js";
+import type { IntegrityFinding, Verdict } from "../analyzers/integrity/types.js";
 
 export interface VerifyMetrics {
   tests: { total: number; passed: number; failed: number; durationMs: number; coverage?: number };
@@ -29,6 +30,12 @@ export interface VerifyReport {
   };
   baseline: VerifyMetrics;
   current: VerifyMetrics;
+  /** Phase 16 integrity gate result captured by `guardian verify`. */
+  integrity?: {
+    verdict: Verdict;
+    findings: IntegrityFinding[];
+    summary: { confirmed: number; suspicious: number; total: number };
+  };
 }
 
 export interface History {
@@ -58,6 +65,35 @@ export function loadHistory(repo: string): History {
   scans.sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1));
   verifies.sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1));
   return { repo, scans, verifies };
+}
+
+/**
+ * Gather every Phase 16 integrity verdict recorded by the loop (from verify-*.json
+ * and integrity-*.json in `.guardian/`) and summarize catches vs self-corrections.
+ */
+export function collectIntegrity(repo: string): ReportModel["integrity"] | undefined {
+  const dir = path.join(repo, ".guardian");
+  if (!fs.existsSync(dir)) return undefined;
+  const events: { timestamp: string; verdict: Verdict; findings: IntegrityFinding[] }[] = [];
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith(".json")) continue;
+    if (!(f.startsWith("verify-") || f.startsWith("integrity-"))) continue;
+    try {
+      const j = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
+      const verdict: Verdict | undefined = j.integrity?.verdict ?? j.verdict;
+      const findings: IntegrityFinding[] = j.integrity?.findings ?? j.findings ?? [];
+      if (verdict) events.push({ timestamp: j.timestamp ?? "", verdict, findings });
+    } catch {
+      /* ignore */
+    }
+  }
+  if (events.length === 0) return undefined;
+  events.sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1));
+  const catches = events.filter((e) => e.verdict !== "CLEAN");
+  const selfCorrected = catches.filter((c) =>
+    events.some((e) => e.timestamp > c.timestamp && e.verdict === "CLEAN"),
+  ).length;
+  return { checks: events.length, catches: catches.length, selfCorrected, events };
 }
 
 export interface MetricLine {
@@ -123,6 +159,18 @@ export interface ReportModel {
   hasVerify: boolean;
   /** Committed repro tests that permanently prove each fix. */
   proofs: ReproProof[];
+  /**
+   * Aggregated Phase 16 integrity evidence from every `guardian verify` (and
+   * `guardian integrity`) run in `.guardian/`. A "catch" is any non-CLEAN
+   * verdict; a catch followed by a later CLEAN check is a self-correction the
+   * loop performed on its own. Frame these as a positive — the gate working.
+   */
+  integrity?: {
+    checks: number;
+    catches: number;
+    selfCorrected: number;
+    events: { timestamp: string; verdict: Verdict; findings: IntegrityFinding[] }[];
+  };
 }
 
 const NOT_SCANNED = "not scanned";
@@ -139,6 +187,8 @@ export function buildModel(repo: string): ReportModel {
   const hist = loadHistory(repo);
   const latestScan = hist.scans[hist.scans.length - 1] ?? null;
   const latestVerify = hist.verifies[hist.verifies.length - 1] ?? null;
+
+  const integrity = collectIntegrity(repo);
 
   const lines: MetricLine[] = [];
 
@@ -271,6 +321,20 @@ export function buildModel(repo: string): ReportModel {
     lines.push({ label: "Regression Risk", value: latestVerify.risk, color: c });
   }
 
+  // Integrity (Phase 16 gate) — aggregated from every verify/integrity run.
+  if (!integrity || integrity.checks === 0) {
+    lines.push({ label: "Integrity", value: NOT_ASSESSED, color: "dim" });
+  } else if (integrity.catches === 0) {
+    lines.push({ label: "Integrity", value: "clean", color: "green" });
+  } else {
+    const anyConfirmed = integrity.events.some((e) => e.verdict === "CONFIRMED_CHEAT");
+    lines.push({
+      label: "Integrity",
+      value: `${integrity.catches} catch(es) · ${integrity.selfCorrected} self-corrected`,
+      color: anyConfirmed ? "red" : "yellow",
+    });
+  }
+
   return {
     repo,
     generatedAt: new Date().toISOString(),
@@ -282,6 +346,7 @@ export function buildModel(repo: string): ReportModel {
     clusters: latestScan?.clusters ?? [],
     hasVerify: !!latestVerify,
     proofs: loadProofs(repo),
+    integrity,
   };
 }
 
@@ -317,7 +382,10 @@ export function renderTerminal(model: ReportModel): string {
       : `  ${chalk.bold("Permanent proof".padEnd(24))}: ${chalk.yellow("none — no guardian-repro-*.test.* committed")}`;
 
   const header = `${chalk.dim(`repo: ${model.repo}`)}  ·  ${chalk.dim(`${model.scansCount} scan(s), ${model.verifiesCount} verify(ies)`)}`;
-  const content = [header, "", ...lines, proofLine].join("\n");
+  const contentParts = [header, "", ...lines, proofLine];
+  const integrity = integrityTerminalBlock(model);
+  if (integrity) contentParts.push("", integrity);
+  const content = contentParts.join("\n");
 
   return boxen(content, {
     title: " GUARDIAN — Repository Analysis Complete ",
@@ -468,6 +536,67 @@ function proofSection(proofs: ReproProof[]): string[] {
   return out;
 }
 
+function integrityTerminalBlock(model: ReportModel): string | null {
+  const integ = model.integrity;
+  if (!integ || integ.checks === 0) return null;
+  if (integ.catches === 0) {
+    return `${chalk.bold("Integrity gate")}: ${chalk.green("clean — no cheating detected across " + integ.checks + " check(s)")}`;
+  }
+  const lines: string[] = [
+    `${chalk.bold("Integrity gate")}: ${chalk.yellow(integ.catches + " catch(es)")}, ${chalk.green(integ.selfCorrected + " self-corrected by the loop")}`,
+  ];
+  for (const e of integ.events.filter((x) => x.verdict !== "CLEAN")) {
+    for (const f of e.findings) {
+      lines.push(
+        `  - [${f.confidence}] ${f.detector}/${f.pattern} @ ${f.file}${f.line ? ":" + f.line : ""}: ${f.evidence}`,
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
+function integritySection(model: ReportModel): string[] {
+  const out: string[] = ["## Integrity gate", ""];
+  const integ = model.integrity;
+  if (!integ || integ.checks === 0) {
+    out.push("No integrity checks recorded by the loop. Run `guardian verify` (or `guardian integrity`) to populate.");
+    out.push("");
+    return out;
+  }
+  if (integ.catches === 0) {
+    out.push(
+      `Clean — the integrity gate ran ${integ.checks} time(s) and caught no cheating. Honest fixes sailed through, which is exactly what a trustworthy gate must allow.`,
+    );
+    out.push("");
+    return out;
+  }
+  out.push(
+    `Guardian's integrity gate caught **${integ.catches}** cheating attempt(s) across ${integ.checks} check(s).`,
+  );
+  if (integ.selfCorrected > 0) {
+    out.push(
+      `Guardian caught ${integ.selfCorrected} attempted cheat(s), reverted them, retried the same cluster with the real fix, and proceeded. A catch that ends in a clean verify is the gate working — this is the single most credible line in this report.`,
+    );
+  }
+  if (integ.catches - integ.selfCorrected > 0) {
+    out.push(
+      `**${integ.catches - integ.selfCorrected}** marked **"requires human review"** — the loop escalated instead of looping forever or hiding the cheat.`,
+    );
+  }
+  out.push("");
+  out.push(`| Verdict | Detector | Evidence |`);
+  out.push(`| --- | --- | --- |`);
+  for (const e of integ.events.filter((x) => x.verdict !== "CLEAN")) {
+    for (const f of e.findings) {
+      out.push(
+        `| ${e.verdict} | ${f.detector}/${f.pattern} | \`${f.file}${f.line ? ":" + f.line : ""}\` — ${f.evidence} |`,
+      );
+    }
+  }
+  out.push("");
+  return out;
+}
+
 function notesSection(): string[] {
   return [
     `## Notes`,
@@ -500,6 +629,7 @@ export function renderMarkdown(model: ReportModel, opts: MarkdownOptions = {}): 
 
   out.push(...beforeAfterSection(model));
   out.push(...proofSection(model.proofs));
+  out.push(...integritySection(model));
   out.push(...notesSection());
 
   return out.join("\n");

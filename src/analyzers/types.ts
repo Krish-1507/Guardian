@@ -47,6 +47,8 @@ export interface PerfResult {
   note?: string;
   buildTimeMs?: number;
   bundleSizeBytes?: number;
+  /** Captured when the build script fails, to aid diagnosis. */
+  stderr?: string;
   /** Stable id for the perf baseline finding (used by `guardian repro`). */
   id?: string;
 }

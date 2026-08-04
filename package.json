@@ -22,7 +22,10 @@
   "files": [
     "dist",
     "templates",
-    "demo-repo"
+    "demo-repo",
+    "demo-repo-integrity",
+    "demo-repo-fintech",
+    "demo-repo-generators"
   ],
   "engines": {
     "node": ">=18"
@@ -42,6 +45,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@babel/parser": "^7.25.0",
     "boxen": "^7.1.1",
     "chalk": "^5.3.0",
     "cli-table3": "^0.6.5",

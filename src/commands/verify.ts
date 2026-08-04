@@ -12,6 +12,27 @@ import { addEntry } from "../memory/store.js";
 import type { ScanResult } from "../analyzers/types.js";
 import type { VerifyMetrics } from "../report/format.js";
 import { classifyRisk, deltasOf, metricsOf } from "../verify/metrics.js";
+import { getDiff } from "../analyzers/integrity/git.js";
+import { buildIntegrityReport } from "../graph/integrity.js";
+import type { IntegrityFinding, Verdict } from "../analyzers/integrity/types.js";
+
+interface IntegrityGate {
+  verdict: Verdict;
+  findings: IntegrityFinding[];
+  summary: { confirmed: number; suspicious: number; total: number };
+}
+
+/**
+ * Every verify run doubles as an integrity gate: it diffs the working tree
+ * against the last commit (HEAD) and runs the AI-agent-cheat detectors. A
+ * SUSPICIOUS or CONFIRMED_CHEAT verdict BLOCKS the change regardless of test
+ * or perf numbers.
+ */
+function integrityGate(repo: string): IntegrityGate {
+  const changes = getDiff(repo, "HEAD");
+  const report = buildIntegrityReport(repo, "HEAD", "working tree", changes);
+  return { verdict: report.verdict, findings: report.findings, summary: report.summary };
+}
 
 function readBaseline(repo: string): ScanResult | null {
   const p = path.join(repo, ".guardian", "scan-latest.json");
@@ -71,7 +92,10 @@ function deltaPct(n: number): string {
 }
 
 export const verify = new Command("verify")
-  .description("Re-run tests/perf and diff against the last scan baseline")
+  .description(
+    "Re-run tests/perf, diff against the last scan baseline, AND gate on the integrity diff since HEAD — " +
+      "SUSPICIOUS/CONFIRMED_CHEAT verifies exit 1/2 with 'BLOCKED — integrity violation'.",
+  )
   .argument("[repo]", "path to the repo to verify", ".")
   .action(async (repoArg: string) => {
     const repo = path.resolve(repoArg);
@@ -90,6 +114,11 @@ export const verify = new Command("verify")
     const d = deltasOf(baseline, current);
 
     const risk = classifyRisk(baseline, current, d);
+
+    // Integrity gate — runs automatically on every verify, gating the commit.
+    const integrity = integrityGate(repo);
+    const blocked =
+      integrity.verdict === "SUSPICIOUS" || integrity.verdict === "CONFIRMED_CHEAT";
 
     const table = new Table({
       head: ["Metric", "Baseline", "Current", "Δ"],
@@ -151,8 +180,38 @@ export const verify = new Command("verify")
     );
 
     const riskColor = risk === "High" ? chalk.red : risk === "Medium" ? chalk.yellow : chalk.green;
-    const riskLine = `${chalk.bold("Regression risk:")} ${riskColor(risk.toUpperCase())}`;
-    const content = `${riskLine}\n\n${table.toString()}`;
+    let riskLine: string;
+    if (blocked) {
+      riskLine = `${chalk.bold("Regression risk:")} ${chalk.red("BLOCKED — integrity violation")} (${integrity.verdict})`;
+    } else {
+      riskLine = `${chalk.bold("Regression risk:")} ${riskColor(risk.toUpperCase())}`;
+    }
+
+    const integrityParts: string[] = [];
+    if (blocked) {
+      integrityParts.push(
+        chalk.red(
+          `${chalk.bold("Integrity gate:")} ${integrity.verdict} — ` +
+            `${integrity.summary.confirmed} confirmed · ${integrity.summary.suspicious} suspicious`,
+        ),
+      );
+      for (const f of integrity.findings) {
+        const tag =
+          f.confidence === "confirmed" ? chalk.red("CONFIRMED") : chalk.yellow("SUSPICIOUS");
+        const loc = f.line ? `${f.file}:${f.line}` : f.file;
+        integrityParts.push(
+          `  ${tag} ${chalk.bold(f.detector)} / ${f.pattern} @ ${chalk.cyan(loc)}`,
+          `    ${f.evidence}`,
+        );
+      }
+    }
+
+    const contentParts = integrityParts.length > 0 ? [...integrityParts, ""] : [];
+    contentParts.push(riskLine);
+    contentParts.push("", table.toString());
+    const content = contentParts.join("\n");
+
+    const boxColor = blocked ? "red" : risk === "High" ? "red" : risk === "Medium" ? "yellow" : "green";
 
     console.log(
       boxen(content, {
@@ -160,7 +219,7 @@ export const verify = new Command("verify")
         titleAlignment: "center",
         borderStyle: "double",
         padding: 1,
-        borderColor: risk === "High" ? "red" : risk === "Medium" ? "yellow" : "green",
+        borderColor: boxColor,
       }),
     );
 
@@ -173,21 +232,38 @@ export const verify = new Command("verify")
       repo,
       baselineTimestamp: baselineResult.timestamp,
       risk,
-      exitCode: risk === "High" ? 1 : 0,
+      blocked,
+      status: blocked ? "BLOCKED" : "OK",
+      exitCode: blocked
+        ? integrity.verdict === "CONFIRMED_CHEAT"
+          ? 2
+          : 1
+        : risk === "High"
+          ? 1
+          : 0,
+      integrity,
       deltas: d,
       baseline,
       current,
     };
     fs.writeFileSync(file, JSON.stringify(report, null, 2));
 
-    const summary = `verify ${risk}: tests ${signed(d.failed)} fail, bundle ${deltaBytes(d.bundleSizeBytes)}, security ${signed(d.security)}`;
+    const summary = blocked
+      ? `verify BLOCKED (integrity ${integrity.verdict})`
+      : `verify ${risk}: tests ${signed(d.failed)} fail, bundle ${deltaBytes(d.bundleSizeBytes)}, security ${signed(d.security)}`;
     addEntry(repo, {
       type: "fix",
       summary,
-      context: `verify against baseline ${baselineResult.timestamp}`,
+      context: `verify against baseline ${baselineResult.timestamp} — integrity ${integrity.verdict}`,
     });
 
     console.log(chalk.dim(`\nReport written to ${file}\n`));
 
-    process.exitCode = risk === "High" ? 1 : 0;
+    process.exitCode = blocked
+      ? integrity.verdict === "CONFIRMED_CHEAT"
+        ? 2
+        : 1
+      : risk === "High"
+        ? 1
+        : 0;
   });

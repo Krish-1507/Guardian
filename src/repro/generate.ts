@@ -49,16 +49,24 @@ function assemble(
   );
 }
 
+/**
+ * One-time boilerplate that defines `requireFromRepo` for node-test ESM runs.
+ * Emit this exactly once even when multiple `requireLine`s follow.
+ */
+function requireBoilerplate(framework: TestFramework): string {
+  if (isJestLike(framework)) return "";
+  return (
+    `const { createRequire } = await import("node:module");\n` +
+    `const requireFromRepo = createRequire(import.meta.url);`
+  );
+}
+
 /** Require a module from the repo (works for both jest CJS and node-test ESM). */
 function requireLine(framework: TestFramework, target: string, varName: string): string {
   if (isJestLike(framework)) {
     return `const ${varName} = require(${JSON.stringify(target)});`;
   }
-  return (
-    `const { createRequire } = await import("node:module");\n` +
-    `const requireFromRepo = createRequire(import.meta.url);\n` +
-    `const ${varName} = requireFromRepo(${JSON.stringify(target)});`
-  );
+  return `const ${varName} = requireFromRepo(${JSON.stringify(target)});`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -360,7 +368,7 @@ function securityRepro(
     repo,
     framework,
     slug,
-    assemble(framework, header, recipe.check(framework)),
+    assemble(framework, header, requireBoilerplate(framework) + "\n\n" + recipe.check(framework)),
   );
   return { ok: true, file, framework };
 }
@@ -381,8 +389,9 @@ function raceRepro(
   if (rel.startsWith("..")) {
     return { ok: false, reason: `race finding file is outside the repo: ${finding.file}` };
   }
-  const moduleTarget = rel.replace(/\.(js|mjs|cjs)$/, "");
-  const req = requireLine(framework, "./" + moduleTarget, "mod");
+  // Keep the extension: ESM `import()` resolves relative specifiers strictly
+  // ("./src/counter.js"), whereas CJS `require()` tolerates extensionless paths.
+  const moduleTarget = rel;
   const slug = reproSlug(finding);
   const header = [
     `// Guardian repro test — finding ${finding.id}`,
@@ -397,9 +406,8 @@ function raceRepro(
   ].join("\n");
 
   const body = [
-    req,
-    ``,
     `test("guardian repro ${finding.id}: ${moduleTarget} stays consistent under concurrent load", async () => {`,
+    `  const mod = await import(${JSON.stringify("./" + moduleTarget)});`,
     `  const fns = Object.values(mod).filter((v) => typeof v === "function");`,
     `  assert.ok(fns.length > 0, "no exported functions to stress");`,
     `  const N = 30;`,
@@ -531,18 +539,26 @@ function a11yRepro(
     `// Linked from .guardian/scan-latest.json.`,
     `// Axe-core assertion against ${rel}.`,
   ].join("\n");
-  const axeReq = requireLine(framework, "axe-core", "axe");
+  const axeReq = requireLine(framework, "axe-core", "axeCore");
   const jsdomReq = requireLine(framework, "jsdom", "jsdom");
   const fsReq = requireLine(framework, "node:fs", "nodefs");
   const body = [
+    requireBoilerplate(framework),
     axeReq,
     jsdomReq,
     fsReq,
     ``,
-    `test("guardian repro ${finding.id}: axe reports no violations for ${rel}", () => {`,
+    `test("guardian repro ${finding.id}: axe reports no violations for ${rel}", async () => {`,
     `  const html = nodefs.readFileSync(${JSON.stringify(rel)}, "utf8");`,
-    `  const dom = new jsdom.JSDOM(html);`,
-    `  const results = axe.run(dom.window.document, { rules: ["color-contrast", "image-alt"] });`,
+    `  const dom = new jsdom.JSDOM(html, { runScripts: "outside-only" });`,
+    `  const { window } = dom;`,
+    `  // axe-core runs inside the jsdom window, so inject its source there first.`,
+    `  window.eval(axeCore.source);`,
+    `  const results = await window.axe.run(window.document, {`,
+    `    // color-contrast is excluded: it needs real layout/rendering that jsdom`,
+    `    // does not provide, so it throws rather than returns a violation.`,
+    `    runOnly: { type: "rule", values: ["image-alt", "document-title", "html-has-lang", "link-name", "list"] },`,
+    `  });`,
     `  assert.ok(results.violations.length === 0, JSON.stringify(results.violations, null, 2));`,
     `});`,
   ].join("\n");

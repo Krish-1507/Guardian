@@ -1,6 +1,4 @@
 node_modules
-dist
-coverage
 .guardian
 GUARDIAN_REPORT.md
-*.tgz
+coverage
