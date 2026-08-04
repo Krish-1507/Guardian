@@ -14,12 +14,37 @@ nothing is left to fix.
 
 ## Watch it run
 
-![Guardian demo: scan → confirm → autonomous fix loop → final report](docs/demo.gif)
+This is the actual boxed output `guardian scan` prints — verbatim from a real run against the
+intentionally-broken demo repo:
 
-A real, unedited run of the whole loop. `guardian scan` prints the boxed root-cause summary,
-you confirm once, then the agent branches, fixes, verifies, re-scans, and stops only when the
-repo is clean — `nothing left to fix, nothing broken.` A final `guardian report` writes
-`GUARDIAN_REPORT.md`.
+```
+╔═══════════════════  GUARDIAN — Repository Scan Complete  ════════════════════╗
+║                                                                              ║
+║   Dependency Graph : 2 circular — src/userService.js → src/userRepo.js →     ║
+║   src/userService.js                                                         ║
+║   Security         : 1 issues — high dependency: lodash: Command Injection   ║
+║   in lodash                                                                  ║
+║                                                                              ║
+║   Root Causes      : 1 root cause(s) → 2 symptom(s)                          ║
+║   1. MEDIUM circular: circular dependency: src/userService.js →              ║
+║   src/userRepo.js → src/userService.js                                       ║
+║   → 2 symptom(s) · shared: src/userService.js, src/userRepo.js,              ║
+║   src/userController.js                                                      ║
+║   Duplication      : skipped — jscpd not found                               ║
+║   Tests            : 2 failed / 2 — 5832ms, 38.46% cov                       ║
+║   Performance      : skipped — no build script                               ║
+║   Accessibility    : skipped — no HTML or JSX found in repo                  ║
+║   Reliability      : 0 flaky · 0 race smells · 3 runs                        ║
+║   Devex            : 0 unused exports · 1 dup function(s)                    ║
+║                                                                              ║
+║   Awaiting confirmation to begin autonomous fixing.                          ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
+
+Then the loop: you confirm once, and the agent branches, fixes, verifies, re-scans, and stops
+only when the repo is clean — `nothing left to fix, nothing broken.` A final `guardian
+report` writes `GUARDIAN_REPORT.md`.
 
 Run it yourself in under two minutes:
 
@@ -45,6 +70,11 @@ Guardian is **two pieces glued together**:
    - **Duplication** — `jscpd` (copy-paste clones)
    - **Tests** — `jest`, `vitest`, or `pytest` (pass/fail, duration, coverage)
    - **Performance** — build time + bundle size
+   - **Accessibility** — `pa11y`/`axe` runtime checks on static HTML, plus a built-in
+     static JSX lint that needs no install
+   - **Reliability** — flaky-test detection (suite run repeatedly) + race-condition
+     heuristics
+   - **DevEx** — unused exports + structural duplicate-function detection
    - **Root-cause correlation** — clusters symptoms that share the same files into one root cause
 
    It also **records** every scan, verify, and fix in memory so the loop gets smarter over
@@ -165,6 +195,7 @@ npx guardian-cli install --uninstall
 | `guardian report [repo]` | Aggregate scan/verify history into `GUARDIAN_REPORT.md` + a boxed terminal summary. |
 | `guardian demo` | Copy the broken demo repo to a temp dir and install the slash-command there. |
 | `guardian install [--force\|--uninstall]` | Install/remove the `/guardian` slash-command into your tools. |
+| `guardian ci [repo]` | Diagnostic-only: diff a PR against its base branch and print a markdown CI report (used by the GitHub Action). |
 
 ### What the engine detects
 
@@ -175,6 +206,12 @@ npx guardian-cli install --uninstall
 - **Duplication** — `jscpd` clone detection (only if installed).
 - **Tests** — `jest`, `vitest`, or `pytest`: total/passed/failed, duration, coverage.
 - **Performance** — build time and bundle size when the repo has a `build` script.
+- **Accessibility** — `pa11y`/`axe` runtime checks on static HTML (only if installed), plus a
+  built-in static JSX lint that runs with no dependencies.
+- **Reliability** — flaky tests (the suite is run repeatedly; outcomes that change across runs
+  are flagged) and timer/state race-condition heuristics (always labeled as heuristics).
+- **DevEx** — unused exports and near-identical duplicate function bodies, via structural
+  source analysis that needs no extra tooling.
 
 ---
 

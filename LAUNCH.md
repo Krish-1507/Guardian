@@ -1,8 +1,18 @@
 # Show HN: Guardian — a `/guardian` slash-command that turns your coding agent into an autonomous fixer
 
-![Guardian demo: scan → confirm → autonomous fix loop → final report](docs/demo.gif)
-
 > The first thing you see is the box. That box is the whole product thesis.
+
+```
+╔══════════════════  GUARDIAN — Repository Scan Complete  ══════════════════╗
+║   Dependency Graph : 2 circular — src/userService.js → src/userRepo.js →  ║
+║   src/userService.js                                                      ║
+║   Security         : 1 issues — high dependency: lodash: Command Injection ║
+║   Root Causes      : 1 root cause(s) → 2 symptom(s)                       ║
+║   1. MEDIUM circular: circular dependency: src/userService.js → ...       ║
+║   Tests            : 2 failed / 2 — 5832ms, 38.46% cov                    ║
+║   Awaiting confirmation to begin autonomous fixing.                       ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+```
 
 ## The one-liner
 
@@ -43,9 +53,9 @@ one thing it noticed and declares victory. Guardian gives it an honest feedback 
 
 ## Try it in under 2 minutes — no messy codebase needed
 
-Don't want to point it at your own repo yet? We ship an intentionally-broken demo project
-seeded with a circular dependency, a hardcoded secret, a known-CVE dependency, duplicated
-code, and failing tests.
+Don't want to point it at your own repo yet? The repo ships an intentionally-broken demo
+project seeded with a circular dependency, a hardcoded secret, a known-CVE dependency,
+duplicated code, and failing tests.
 
 ```bash
 npx guardian-cli demo
@@ -68,7 +78,7 @@ in the code before you watch it get fixed.
 
 ## Show, don't tell
 
-- **Demo (2 min):** the GIF above, or `npx guardian-cli demo` locally.
+- **Demo (2 min):** the box above is real output — or run `npx guardian-cli demo` locally.
 - **Report sample:** a full `GUARDIAN_REPORT.md` is generated after every loop.
 - **CI:** guardian runs in CI too — `guardian ci` diffs a PR against its base branch and
   posts one comment (`build-and-smoke` status in the badge below).
