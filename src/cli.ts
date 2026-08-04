@@ -6,6 +6,7 @@ import { verify } from "./commands/verify.js";
 import { memory } from "./commands/memory.js";
 import { report } from "./commands/report.js";
 import { demo } from "./commands/demo.js";
+import { ci } from "./commands/ci.js";
 
 const program = new Command();
 
@@ -20,5 +21,6 @@ program.addCommand(verify);
 program.addCommand(memory);
 program.addCommand(report);
 program.addCommand(demo);
+program.addCommand(ci);
 
 program.parseAsync(process.argv);

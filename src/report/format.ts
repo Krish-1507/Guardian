@@ -141,8 +141,31 @@ export function buildModel(repo: string): ReportModel {
     });
   }
 
-  // Accessibility — no analyzer exists yet.
-  lines.push({ label: "Accessibility", value: NOT_SCANNED, color: "dim" });
+  // Reliability (flaky tests + race-condition heuristics)
+  if (!latestScan || latestScan.reliability?.status !== "ok") {
+    lines.push({ label: "Reliability", value: NOT_SCANNED, color: "dim" });
+  } else {
+    const rel = latestScan.reliability;
+    const dirty = rel.flakyTests.length > 0 || rel.raceSmells.length > 0;
+    lines.push({
+      label: "Reliability",
+      value: `${rel.flakyTests.length} flaky · ${rel.raceSmells.length} race smell(s) · ${rel.runs} runs`,
+      color: dirty ? "yellow" : "green",
+    });
+  }
+
+  // Accessibility
+  if (!latestScan || latestScan.accessibility?.status !== "ok") {
+    lines.push({ label: "Accessibility", value: NOT_SCANNED, color: "dim" });
+  } else {
+    const a = latestScan.accessibility;
+    const dirty = a.issues.length > 0;
+    lines.push({
+      label: "Accessibility",
+      value: `${a.issues.length} issues${a.engine ? ` · ${a.engine}` : ""}`,
+      color: dirty ? "yellow" : "green",
+    });
+  }
 
   // Performance (with deltas from verify when available)
   if (!latestScan || latestScan.perf.status !== "ok") {
@@ -162,6 +185,19 @@ export function buildModel(repo: string): ReportModel {
       }
     }
     lines.push({ label: "Performance", value: parts.join(" · "), color: "green" });
+  }
+
+  // Devex (unused exports / duplicate functions)
+  if (!latestScan || latestScan.devex?.status !== "ok") {
+    lines.push({ label: "Devex", value: NOT_SCANNED, color: "dim" });
+  } else {
+    const dx = latestScan.devex;
+    const dirty = dx.unusedExports.length > 0 || dx.duplicateFunctions.length > 0;
+    lines.push({
+      label: "Devex",
+      value: `${dx.unusedExports.length} unused export(s) · ${dx.duplicateFunctions.length} dup function(s)`,
+      color: dirty ? "yellow" : "green",
+    });
   }
 
   // Technical Debt
@@ -247,113 +283,148 @@ function deltaCell(n: number, unit: string, higherIsBetter: boolean, isPct = fal
   return good ? chalk.green(val) : chalk.red(val);
 }
 
-export function renderMarkdown(model: ReportModel): string {
-  const out: string[] = [];
-  out.push(`# GUARDIAN — Repository Analysis Complete`);
-  out.push("");
-  out.push(`_Generated ${model.generatedAt}_  `);
-  out.push(`_Repo: \`${model.repo}\` · ${model.scansCount} scan(s), ${model.verifiesCount} verify(ies)_`);
-  out.push("");
+export interface MarkdownOptions {
+  /** Put the root-cause → symptoms clusters directly under the header. */
+  clustersFirst?: boolean;
+  /** One-line context shown under the header (branch, base, PR, etc.). */
+  headerNote?: string;
+  /** Title override (default "Repository Analysis Complete"). */
+  title?: string;
+}
 
+function summarySection(lines: MetricLine[]): string[] {
+  const out: string[] = [];
   out.push(`## Summary`);
   out.push("");
   out.push(`| Metric | Value |`);
   out.push(`| --- | --- |`);
-  for (const l of model.lines) {
-    out.push(`| ${l.label} | ${l.value} |`);
-  }
+  for (const l of lines) out.push(`| ${l.label} | ${l.value} |`);
   out.push("");
+  return out;
+}
 
-  // Root-cause cluster tree
+/** Root cause → symptoms cluster framing, mirroring the interactive scan box. */
+function clustersSection(clusters: Cluster[]): string[] {
+  const out: string[] = [];
   out.push(`## Root-Cause Clusters`);
   out.push("");
-  if (model.clusters.length === 0) {
+  if (clusters.length === 0) {
     out.push(`No root-cause clusters identified.`);
-  } else {
-    model.clusters.forEach((c, i) => {
-      out.push(`${i + 1}. **Root Cause** (${c.rootCause.severity} ${c.rootCause.type}): ${c.rootCause.description}`);
-      out.push(`   - shared files: \`${c.sharedFiles.join("`, `")}\``);
-      if (c.rootCause.files?.length) {
-        out.push(`   - root files: \`${c.rootCause.files.join("`, `")}\``);
-      }
-      for (const s of c.symptoms) {
-        out.push(`   - Symptom (${s.severity} ${s.type}): ${s.description}`);
-      }
-    });
+    out.push("");
+    return out;
   }
+  clusters.forEach((c, i) => {
+    const sev = c.rootCause.severity.toUpperCase();
+    out.push(`${i + 1}. **Root cause** (${sev} ${c.rootCause.type}): ${c.rootCause.description}`);
+    out.push(`   → ${c.symptoms.length} symptom(s) · shared: \`${c.sharedFiles.join("`, `")}\``);
+    for (const s of c.symptoms) {
+      out.push(`     - (${s.severity.toUpperCase()} ${s.type}): ${s.description}`);
+    }
+    if (i < clusters.length - 1) out.push("");
+  });
   out.push("");
+  return out;
+}
 
-  // Before / After table
+function beforeAfterSection(model: ReportModel): string[] {
+  const out: string[] = [];
   out.push(`## Before / After`);
   out.push("");
   if (!model.hasVerify || !model.latestVerify) {
-    out.push(`No verify history — run \`guardian verify\` to populate the before/after diff.`);
-  } else {
-    const v = model.latestVerify;
-    const b = v.baseline;
-    const cur = v.current;
-    const d = v.deltas;
-    out.push(`Latest verify risk: **${v.risk}** (baseline ${v.baselineTimestamp ?? "unknown"})`);
+    out.push(`No verify history — run \`guardian verify\` (or \`guardian ci\` in a PR) to populate the before/after diff.`);
     out.push("");
-    out.push(`| Metric | Baseline | Current | Δ |`);
-    out.push(`| --- | --- | --- | --- |`);
-
-    const row = (name: string, base: string, curr: string, deltaStr: string) => {
-      out.push(`| ${name} | ${base} | ${curr} | ${deltaStr} |`);
-    };
-
-    row(
-      "Tests passed",
-      String(b.tests.passed),
-      String(cur.tests.passed),
-      deltaCell(d.passed, "", true),
-    );
-    row(
-      "Tests failed",
-      String(b.tests.failed),
-      String(cur.tests.failed),
-      deltaCell(d.failed, "", false),
-    );
-    row("Duration", ms(b.tests.durationMs), ms(cur.tests.durationMs), deltaCell(d.durationMs, "ms", false));
-    row(
-      "Coverage",
-      b.tests.coverage != null ? `${b.tests.coverage.toFixed(1)}%` : "—",
-      cur.tests.coverage != null ? `${cur.tests.coverage.toFixed(1)}%` : "—",
-      deltaCell(d.coverage, "%", true, true),
-    );
-    row(
-      "Build time",
-      ms(b.perf.buildTimeMs),
-      ms(cur.perf.buildTimeMs),
-      deltaCell(d.buildTimeMs, "ms", false),
-    );
-    row(
-      "Bundle size",
-      bundleKB(b.perf.bundleSizeBytes),
-      bundleKB(cur.perf.bundleSizeBytes),
-      deltaCell(d.bundleSizeBytes, "KB", false),
-    );
-    row(
-      "Security findings",
-      String(b.securityCount),
-      String(cur.securityCount),
-      deltaCell(d.security, "", false),
-    );
-    row(
-      "Duplication clones",
-      String(b.duplicationCount),
-      String(cur.duplicationCount),
-      deltaCell(d.duplication, "", false),
-    );
+    return out;
   }
+  const v = model.latestVerify;
+  const b = v.baseline;
+  const cur = v.current;
+  const d = v.deltas;
+  out.push(`Latest verify risk: **${v.risk}** (baseline ${v.baselineTimestamp ?? "unknown"})`);
+  out.push("");
+  out.push(`| Metric | Baseline | Current | Δ |`);
+  out.push(`| --- | --- | --- | --- |`);
+  const row = (name: string, base: string, curr: string, deltaStr: string) => {
+    out.push(`| ${name} | ${base} | ${curr} | ${deltaStr} |`);
+  };
+  row(
+    "Tests passed",
+    String(b.tests.passed),
+    String(cur.tests.passed),
+    deltaCell(d.passed, "", true),
+  );
+  row(
+    "Tests failed",
+    String(b.tests.failed),
+    String(cur.tests.failed),
+    deltaCell(d.failed, "", false),
+  );
+  row("Duration", ms(b.tests.durationMs), ms(cur.tests.durationMs), deltaCell(d.durationMs, "ms", false));
+  row(
+    "Coverage",
+    b.tests.coverage != null ? `${b.tests.coverage.toFixed(1)}%` : "—",
+    cur.tests.coverage != null ? `${cur.tests.coverage.toFixed(1)}%` : "—",
+    deltaCell(d.coverage, "%", true, true),
+  );
+  row(
+    "Build time",
+    ms(b.perf.buildTimeMs),
+    ms(cur.perf.buildTimeMs),
+    deltaCell(d.buildTimeMs, "ms", false),
+  );
+  row(
+    "Bundle size",
+    bundleKB(b.perf.bundleSizeBytes),
+    bundleKB(cur.perf.bundleSizeBytes),
+    deltaCell(d.bundleSizeBytes, "KB", false),
+  );
+  row(
+    "Security findings",
+    String(b.securityCount),
+    String(cur.securityCount),
+    deltaCell(d.security, "", false),
+  );
+  row(
+    "Duplication clones",
+    String(b.duplicationCount),
+    String(cur.duplicationCount),
+    deltaCell(d.duplication, "", false),
+  );
+  out.push("");
+  return out;
+}
+
+function notesSection(): string[] {
+  return [
+    `## Notes`,
+    ``,
+    `- Every figure above is read directly from \`.guardian/scan-*.json\` and \`.guardian/verify-*.json\`.`,
+    `- Categories marked **${NOT_SCANNED}** could not be analyzed for this repo (see the scan's per-category notes for why).`,
+    `- Categories marked **${NOT_ASSESSED}** depend on a \`guardian verify\` run that has not happened.`,
+    `- Accessibility can only run a live page test with pa11y/axe; otherwise it falls back to static JSX linting.`,
+    `- Reliability and race-condition findings are heuristics — confirm each before acting.`,
+    ``,
+  ];
+}
+
+export function renderMarkdown(model: ReportModel, opts: MarkdownOptions = {}): string {
+  const out: string[] = [];
+  out.push(`# GUARDIAN — ${opts.title ?? "Repository Analysis Complete"}`);
+  out.push("");
+  out.push(`_Generated ${model.generatedAt}_  `);
+  out.push(`_Repo: \`${model.repo}\` · ${model.scansCount} scan(s), ${model.verifiesCount} verify(ies)_`);
+  if (opts.headerNote) out.push(`_${opts.headerNote}_`);
   out.push("");
 
-  out.push(`## Notes`);
-  out.push("");
-  out.push(`- Every figure above is read directly from \`.guardian/scan-*.json\` and \`.guardian/verify-*.json\`.`);
-  out.push(`- Categories marked **${NOT_SCANNED}** have no analyzer wired up yet (e.g. Memory Leaks, Accessibility).`);
-  out.push(`- Categories marked **${NOT_ASSESSED}** depend on a \`guardian verify\` run that has not happened.`);
-  out.push("");
+  if (opts.clustersFirst) {
+    out.push(...clustersSection(model.clusters));
+    out.push(...summarySection(model.lines));
+  } else {
+    out.push(...summarySection(model.lines));
+    out.push(...clustersSection(model.clusters));
+  }
+
+  out.push(...beforeAfterSection(model));
+  out.push(...notesSection());
 
   return out.join("\n");
 }

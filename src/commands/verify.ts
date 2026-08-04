@@ -10,22 +10,8 @@ import { analyzeSecurity } from "../analyzers/security.js";
 import { analyzeDuplication } from "../analyzers/duplication.js";
 import { addEntry } from "../memory/store.js";
 import type { ScanResult } from "../analyzers/types.js";
-
-interface Metrics {
-  tests: {
-    total: number;
-    passed: number;
-    failed: number;
-    durationMs: number;
-    coverage?: number;
-  };
-  perf: {
-    buildTimeMs?: number;
-    bundleSizeBytes?: number;
-  };
-  securityCount: number;
-  duplicationCount: number;
-}
+import type { VerifyMetrics } from "../report/format.js";
+import { classifyRisk, deltasOf, metricsOf } from "../verify/metrics.js";
 
 function readBaseline(repo: string): ScanResult | null {
   const p = path.join(repo, ".guardian", "scan-latest.json");
@@ -37,25 +23,7 @@ function readBaseline(repo: string): ScanResult | null {
   }
 }
 
-function metricsOf(r: ScanResult): Metrics {
-  return {
-    tests: {
-      total: r.tests.total,
-      passed: r.tests.passed,
-      failed: r.tests.failed,
-      durationMs: r.tests.durationMs,
-      coverage: r.tests.coverage,
-    },
-    perf: {
-      buildTimeMs: r.perf.buildTimeMs,
-      bundleSizeBytes: r.perf.bundleSizeBytes,
-    },
-    securityCount: r.security.issues.length,
-    duplicationCount: r.duplication.cloneCount,
-  };
-}
-
-function currentMetrics(repo: string): Metrics {
+function currentMetrics(repo: string): VerifyMetrics {
   const tests = analyzeTests(repo);
   const perf = analyzePerf(repo);
   const security = analyzeSecurity(repo);
@@ -75,19 +43,6 @@ function currentMetrics(repo: string): Metrics {
     securityCount: security.issues.length,
     duplicationCount: duplication.cloneCount,
   };
-}
-
-function perfRegressed(b: Metrics["perf"], c: Metrics["perf"]): boolean {
-  const bb = b.bundleSizeBytes ?? 0;
-  const cb = c.bundleSizeBytes ?? 0;
-  const bt = b.buildTimeMs ?? 0;
-  const ct = c.buildTimeMs ?? 0;
-  // Bundle size is stable across runs, so a >10% relative change is meaningful.
-  if (bb > 0 && (cb - bb) / bb > 0.1) return true;
-  // Build time is noisy at small absolute values; only treat as a regression
-  // when the baseline is large enough for a relative % to be trustworthy.
-  if (bt >= 500 && (ct - bt) / bt > 0.1) return true;
-  return false;
 }
 
 function fmtBundle(b?: number): string {
@@ -132,48 +87,9 @@ export const verify = new Command("verify")
     }
     const baseline = metricsOf(baselineResult);
     const current = currentMetrics(repo);
+    const d = deltasOf(baseline, current);
 
-    const d = {
-      passed: current.tests.passed - baseline.tests.passed,
-      failed: current.tests.failed - baseline.tests.failed,
-      durationMs: current.tests.durationMs - baseline.tests.durationMs,
-      coverage: (current.tests.coverage ?? 0) - (baseline.tests.coverage ?? 0),
-      buildTimeMs: (current.perf.buildTimeMs ?? 0) - (baseline.perf.buildTimeMs ?? 0),
-      bundleSizeBytes: (current.perf.bundleSizeBytes ?? 0) - (baseline.perf.bundleSizeBytes ?? 0),
-      security: current.securityCount - baseline.securityCount,
-      duplication: current.duplicationCount - baseline.duplicationCount,
-    };
-
-    const testsNewlyFail = current.tests.failed > baseline.tests.failed && current.tests.failed > 0;
-    const regressed = perfRegressed(baseline.perf, current.perf);
-
-    let risk: "High" | "Medium" | "Low";
-    if (testsNewlyFail || regressed) {
-      risk = "High";
-    } else {
-      // Build time is noisy at small absolute values; ignore sub-50ms deltas
-      // when classifying risk so a re-run doesn't look like a regression.
-      const buildDelta = Math.abs(d.buildTimeMs) > 50 ? d.buildTimeMs : 0;
-      const changed =
-        d.passed !== 0 ||
-        d.failed !== 0 ||
-        d.durationMs !== 0 ||
-        d.coverage !== 0 ||
-        buildDelta !== 0 ||
-        d.bundleSizeBytes !== 0 ||
-        d.security !== 0 ||
-        d.duplication !== 0;
-      const improved =
-        d.failed < 0 ||
-        d.passed > 0 ||
-        d.durationMs < 0 ||
-        d.coverage > 0 ||
-        buildDelta < 0 ||
-        d.bundleSizeBytes < 0 ||
-        d.security < 0 ||
-        d.duplication < 0;
-      risk = !changed || improved ? "Low" : "Medium";
-    }
+    const risk = classifyRisk(baseline, current, d);
 
     const table = new Table({
       head: ["Metric", "Baseline", "Current", "Δ"],

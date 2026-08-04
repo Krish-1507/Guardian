@@ -151,6 +151,60 @@ function renderBox(r: ScanResult): string {
     );
   }
 
+  const a = r.accessibility;
+  if (a.status === "ok") {
+    const sev =
+      a.issues.length > 0 &&
+      a.issues.some((i) => i.severity === "high" || i.severity === "critical");
+    const body =
+      a.issues.length > 0
+        ? sev
+          ? chalk.red(`${a.issues.length} issues`)
+          : chalk.yellow(`${a.issues.length} issues`)
+        : chalk.green("clean");
+    const eng = a.engine ? ` · ${a.engine}` : "";
+    lines.push(`${label("Accessibility")}: ${body}${eng}`);
+  } else {
+    lines.push(
+      `${label("Accessibility")}: ${chalk.yellow("skipped")} — ${a.note ?? "unavailable"}`,
+    );
+  }
+
+  const reliab = r.reliability;
+  if (reliab.status === "ok") {
+    const flaky =
+      reliab.flakyTests.length > 0
+        ? chalk.red(`${reliab.flakyTests.length} flaky`)
+        : chalk.green("0 flaky");
+    const smells =
+      reliab.raceSmells.length > 0
+        ? chalk.yellow(`${reliab.raceSmells.length} race smell(s)`)
+        : chalk.green("0 race smells");
+    const runs = reliab.runs > 0 ? ` · ${reliab.runs} runs` : "";
+    lines.push(`${label("Reliability")}: ${flaky} · ${smells}${runs}`);
+  } else {
+    lines.push(
+      `${label("Reliability")}: ${chalk.yellow("skipped")} — ${reliab.note ?? "unavailable"}`,
+    );
+  }
+
+  const dx = r.devex;
+  if (dx.status === "ok") {
+    const unused =
+      dx.unusedExports.length > 0
+        ? chalk.yellow(`${dx.unusedExports.length} unused export(s)`)
+        : chalk.green("0 unused exports");
+    const dups =
+      dx.duplicateFunctions.length > 0
+        ? chalk.yellow(`${dx.duplicateFunctions.length} dup function(s)`)
+        : chalk.green("0 dup functions");
+    lines.push(`${label("Devex")}: ${unused} · ${dups}`);
+  } else {
+    lines.push(
+      `${label("Devex")}: ${chalk.yellow("skipped")} — ${dx.note ?? "unavailable"}`,
+    );
+  }
+
   const content =
     lines.join("\n") +
     "\n\n  " +
@@ -165,6 +219,21 @@ function renderBox(r: ScanResult): string {
   });
 }
 
+export function runScan(repo: string): { result: ScanResult; file: string } {
+  const result = runAllAnalyzers(repo);
+
+  const { clusters } = correlate(repo, result);
+  result.clusters = clusters;
+
+  const outDir = path.join(repo, ".guardian");
+  fs.mkdirSync(outDir, { recursive: true });
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const file = path.join(outDir, `scan-${ts}.json`);
+  fs.writeFileSync(file, JSON.stringify(result, null, 2));
+  fs.writeFileSync(path.join(outDir, "scan-latest.json"), JSON.stringify(result, null, 2));
+  return { result, file };
+}
+
 export const scan = new Command("scan")
   .description("Scan a repo for dependency, security, duplication, test and performance issues")
   .argument("[repo]", "path to the repo to scan", ".")
@@ -172,17 +241,7 @@ export const scan = new Command("scan")
     const repo = path.resolve(repoArg);
     console.log(chalk.cyan(`\nScanning ${repo} ...\n`));
 
-    const result = runAllAnalyzers(repo);
-
-    const { clusters } = correlate(repo, result);
-    result.clusters = clusters;
-
-    const outDir = path.join(repo, ".guardian");
-    fs.mkdirSync(outDir, { recursive: true });
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const file = path.join(outDir, `scan-${ts}.json`);
-    fs.writeFileSync(file, JSON.stringify(result, null, 2));
-    fs.writeFileSync(path.join(outDir, "scan-latest.json"), JSON.stringify(result, null, 2));
+    const { result, file } = runScan(repo);
 
     console.log(renderBox(result));
     console.log(chalk.dim(`\nReports written to ${file}\n`));

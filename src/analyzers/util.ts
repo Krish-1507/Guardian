@@ -119,6 +119,14 @@ export function walkFiles(root: string, exts: string[]): string[] {
   return out;
 }
 
+/** 1-based line number of a character index in a string. */
+export function lineOf(content: string, index: number): number {
+  let line = 1;
+  const end = Math.min(index, content.length);
+  for (let i = 0; i < end; i++) if (content[i] === "\n") line++;
+  return line;
+}
+
 export function dirSize(root: string): number {
   let total = 0;
   const stack = [root];

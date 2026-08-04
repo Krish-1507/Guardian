@@ -47,8 +47,55 @@ export interface PerfResult {
   bundleSizeBytes?: number;
 }
 
+export interface AccessibilityResult {
+  status: "ok" | "skipped" | "error";
+  note?: string;
+  /** Which detector produced the findings. */
+  engine?: "pa11y" | "axe" | "static-jsx";
+  checked?: { type: "html" | "jsx"; count: number };
+  issues: ScanIssue[];
+}
+
+export interface FlakyTest {
+  name: string;
+  file?: string;
+  /** Outcome per sequential run (length === runs). */
+  statuses: ("passed" | "failed")[];
+}
+
+export interface ReliabilityResult {
+  status: "ok" | "skipped" | "error";
+  note?: string;
+  /** How many sequential suite runs were executed (1 if skipped after timing). */
+  runs: number;
+  /** Wall-clock total across all runs. */
+  durationMs: number;
+  /** Duration of the first (timing) run. */
+  suiteDurationMs?: number;
+  flakyTests: FlakyTest[];
+  /** Timer/state race-condition heuristics — never certain, always labeled. */
+  raceSmells: ScanIssue[];
+}
+
+export interface DuplicateFunction {
+  /** Function name when identical, else "<unnamed>". */
+  name: string;
+  files: { file: string; line: number }[];
+  /** Source lines of the body. */
+  lines: number;
+  /** Dice similarity of normalized token streams, 0..1. */
+  similarity: number;
+}
+
+export interface DevexResult {
+  status: "ok" | "skipped" | "error";
+  note?: string;
+  unusedExports: ScanIssue[];
+  duplicateFunctions: DuplicateFunction[];
+}
+
 export interface ClusterFinding {
-  source: "security" | "duplication" | "graph";
+  source: "security" | "duplication" | "graph" | "a11y" | "reliability" | "devex";
   severity: string;
   type: string;
   description: string;
@@ -71,5 +118,8 @@ export interface ScanResult {
   duplication: DuplicationResult;
   tests: TestsResult;
   perf: PerfResult;
+  accessibility: AccessibilityResult;
+  reliability: ReliabilityResult;
+  devex: DevexResult;
   clusters: Cluster[];
 }

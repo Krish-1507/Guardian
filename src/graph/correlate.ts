@@ -67,6 +67,58 @@ export function collectFindings(repo: string, r: ScanResult): ClusterFinding[] {
     });
   }
 
+  for (const i of r.accessibility.issues) {
+    findings.push({
+      source: "a11y",
+      severity: i.severity,
+      type: "a11y",
+      description: i.description,
+      files: i.file ? [path.relative(repo, i.file)] : [],
+    });
+  }
+
+  for (const f of r.reliability.flakyTests) {
+    findings.push({
+      source: "reliability",
+      severity: "warning",
+      type: "flaky-test",
+      description: `flaky test (outcome changed across ${r.reliability.runs} runs): ${f.name}`,
+      files: f.file ? [path.relative(repo, f.file)] : [],
+    });
+  }
+
+  for (const i of r.reliability.raceSmells) {
+    findings.push({
+      source: "reliability",
+      severity: i.severity,
+      type: "race-condition",
+      description: i.description,
+      files: i.file ? [path.relative(repo, i.file)] : [],
+    });
+  }
+
+  for (const i of r.devex.unusedExports) {
+    findings.push({
+      source: "devex",
+      severity: i.severity,
+      type: "unused-export",
+      description: i.description,
+      files: i.file ? [path.relative(repo, i.file)] : [],
+    });
+  }
+
+  for (const d of r.devex.duplicateFunctions) {
+    findings.push({
+      source: "devex",
+      severity: "medium",
+      type: "duplicate-function",
+      description: `near-identical function bodies (${(d.similarity * 100).toFixed(0)}% similar, ${d.lines} lines): ${d.name} in ${d.files
+        .map((f) => path.basename(f.file))
+        .join(" vs ")}`,
+      files: d.files.map((f) => path.relative(repo, f.file)),
+    });
+  }
+
   return findings;
 }
 
