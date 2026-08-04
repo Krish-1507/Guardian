@@ -2,3 +2,4 @@ node_modules
 dist
 .guardian
 GUARDIAN_REPORT.md
+*.tgz
