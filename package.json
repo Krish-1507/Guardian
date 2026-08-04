@@ -1,0 +1,61 @@
+{
+  "name": "guardian-cli",
+  "version": "0.1.0",
+  "description": "Deterministic scans + your coding agent's own reasoning, in one autonomous quality loop. Adds a /guardian slash-command to any AI coding tool.",
+  "license": "MIT",
+  "author": "Krish-1507",
+  "keywords": [
+    "cli",
+    "guardian",
+    "code-quality",
+    "code-review",
+    "ai",
+    "autonomous",
+    "agent",
+    "scan",
+    "verify"
+  ],
+  "type": "module",
+  "bin": {
+    "guardian": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "demo-repo",
+    "demo-repo-integrity",
+    "demo-repo-fintech",
+    "demo-repo-generators"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Krish-1507/Guardian.git"
+  },
+  "homepage": "https://github.com/Krish-1507/Guardian#readme",
+  "bugs": {
+    "url": "https://github.com/Krish-1507/Guardian/issues"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/cli.ts",
+    "smoke": "node dist/cli.js scan demo-repo",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.25.0",
+    "boxen": "^7.1.1",
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.1.0",
+    "nock": "^14.0.17",
+    "ora": "^8.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

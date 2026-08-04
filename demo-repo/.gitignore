@@ -1,0 +1,4 @@
+node_modules
+coverage
+.guardian
+GUARDIAN_REPORT.md

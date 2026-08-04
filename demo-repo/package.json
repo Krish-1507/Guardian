@@ -1,0 +1,17 @@
+{
+  "name": "guardian-demo-api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Guardian's intentionally-broken demo API",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "lodash": "4.17.15"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
