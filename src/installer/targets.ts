@@ -7,7 +7,7 @@ export interface InstallTarget {
   path: string;
   tool: string;
   level: "project" | "home";
-  transform?: "skill";
+  transform?: "skill" | "workflow";
   note?: string;
 }
 
@@ -29,8 +29,31 @@ export function projectTargets(cwd: string): InstallTarget[] {
       tool: "OpenCode (project, legacy)",
       level: "project",
     },
-    { path: p(".kilocode", "workflows", "guardian.md"), tool: "Kilo Code (project)", level: "project" },
-    { path: p(".kilo", "commands", "guardian.md"), tool: "Kilo (project, legacy)", level: "project" },
+    // Antigravity workflows: markdown files in .agent/workflows/ (singular,
+    // current docs) with YAML frontmatter `description` + title + steps,
+    // invoked as /guardian. Older versions/3rd-party guides use the plural
+    // .agents/workflows/ — write both, one is harmless dead weight.
+    {
+      path: p(".agent", "workflows", "guardian.md"),
+      tool: "Antigravity (project)",
+      level: "project",
+      transform: "workflow",
+    },
+    {
+      path: p(".agents", "workflows", "guardian.md"),
+      tool: "Antigravity (project, plural legacy)",
+      level: "project",
+      transform: "workflow",
+    },
+    // Kilo Code current docs: slash commands live in .kilo/commands/ (project)
+    // and ~/.config/kilo/commands/ (global). .kilocode/workflows/ is the LEGACY
+    // location the new extension auto-migrates on startup — kept for old builds.
+    { path: p(".kilo", "commands", "guardian.md"), tool: "Kilo Code (project)", level: "project" },
+    {
+      path: p(".kilocode", "workflows", "guardian.md"),
+      tool: "Kilo Code (project, legacy — auto-migrated)",
+      level: "project",
+    },
   ];
 }
 
@@ -40,14 +63,19 @@ export function homeTargets(): InstallTarget[] {
   return [
     {
       path: h(".codex", "prompts", "guardian.md"),
-      tool: "Codex (user)",
+      tool: "Codex CLI (user)",
       level: "home",
       note: "Codex supports prompts only at user level",
     },
     { path: h(".claude", "commands", "guardian.md"), tool: "Claude Code (user)", level: "home" },
     { path: h(".cursor", "commands", "guardian.md"), tool: "Cursor (user)", level: "home" },
     { path: h(".opencode", "commands", "guardian.md"), tool: "OpenCode (user)", level: "home" },
-    { path: h(".kilocode", "workflows", "guardian.md"), tool: "Kilo Code (user)", level: "home" },
+    { path: h(".config", "kilo", "commands", "guardian.md"), tool: "Kilo Code (user)", level: "home" },
+    {
+      path: h(".kilocode", "workflows", "guardian.md"),
+      tool: "Kilo Code (user, legacy — auto-migrated)",
+      level: "home",
+    },
   ];
 }
 
@@ -68,15 +96,28 @@ export function resolveTemplatePath(): string {
 
 /**
  * Render the file content for a target. The Claude Code skill variant rewrites
- * the frontmatter to { name, description } as skills require.
+ * the frontmatter to { name, description } as skills require. The Antigravity
+ * workflow variant normalizes the frontmatter to `description` only (their
+ * required field) and keeps the title + numbered steps body as-is.
  */
 export function renderContent(target: InstallTarget, templateText: string): string {
-  if (target.transform !== "skill") return templateText;
-  const m = templateText.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
-  if (!m) return templateText;
-  const fm = m[1];
-  const body = m[2];
-  const descMatch = fm.match(/description:\s*(.+?)\s*$/m);
-  const description = descMatch ? descMatch[1].trim() : "";
-  return `---\nname: guardian\ndescription: ${description}\n---\n\n${body}`;
+  if (target.transform === "skill") {
+    const m = templateText.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+    if (!m) return templateText;
+    const fm = m[1];
+    const body = m[2];
+    const descMatch = fm.match(/description:\s*(.+?)\s*$/m);
+    const description = descMatch ? descMatch[1].trim() : "";
+    return `---\nname: guardian\ndescription: ${description}\n---\n\n${body}`;
+  }
+  if (target.transform === "workflow") {
+    const m = templateText.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+    if (!m) return templateText;
+    const fm = m[1];
+    const body = m[2];
+    const descMatch = fm.match(/description:\s*(.+?)\s*$/m);
+    const description = descMatch ? descMatch[1].trim() : "";
+    return `---\ndescription: ${description}\n---\n\n${body}`;
+  }
+  return templateText;
 }

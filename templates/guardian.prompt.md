@@ -4,6 +4,79 @@ description: "Autonomous engineering quality loop — scans, shows findings, fix
 
 # Guardian — Autonomous Engineering Quality Loop
 
+> **Read this first — mode selection (MANDATORY, before anything else).**
+>
+> The text the user typed after `/guardian` is substituted into this prompt where the
+> placeholder appears on the "Invocation arguments:" line just below.
+>
+> **Invocation arguments: `$ARGUMENTS`**
+>
+> Decide the mode **before doing anything else** — before scanning, before reading files,
+> before printing anything — by reading that one line:
+>
+> - It contains one of the flags `--scan-only`, `--demo`, `--ledger`, or
+>   `--integrity-only` → **mode = that flag**. You MUST NOT print the menu. Go directly
+>   to the matching "## Mode: …" section below.
+> - The line is **empty**, or still shows the literal placeholder word unsubstituted (the
+>   exact placeholder text is still visible) → **mode = menu**. The user typed bare
+>   `/guardian`; follow the "## Mode: menu" section below.
+> - It contains anything else (a phrase, a repo path, an instruction) → **mode = default**
+>   full loop: treat that text as context/instructions and continue with the loop below.
+
+## Mode: menu (bare `/guardian`)
+
+Print **exactly this menu as your entire response**, then **end your turn and wait** for
+the user's next message. Do not scan, do not read files, do not plan anything yet.
+
+```
+Guardian modes:
+ (enter) — full autonomous loop (scan, confirm, fix, verify, repeat)
+ --scan-only — scan and report, no fixes
+ --demo — run against Guardian's own seeded demo repo
+ --ledger — payment idempotency fuzzing only
+ --integrity-only — re-check the last commit for cheat patterns, no scanning
+Reply with a mode, or just hit enter for the default full loop.
+```
+
+Then wait. Map the user's next message to a mode:
+
+- **Empty reply** (or "default" / "full loop") → the default full loop: continue to the
+  "## The default full loop" section below.
+- **`--scan-only`** → the "## Mode: --scan-only" section.
+- **`--demo`** → the "## Mode: --demo" section.
+- **`--ledger`** → the "## Mode: --ledger" section.
+- **`--integrity-only`** → the "## Mode: --integrity-only" section.
+
+## Mode: --scan-only
+
+Run the scan:
+
+`!npx cli-guardian scan`
+
+Print the **entire boxed output verbatim** as your complete response — no summary, no
+commentary, no fixes, no report. Then stop. That is the whole mode.
+
+## Mode: --demo
+
+Run `!npx cli-guardian demo` first; it prints a fresh temp demo repo. Then run the
+**default full loop** (the section below) inside that temp repo — cd there, scan,
+confirm, fix, verify, repeat, as if you had been invoked there.
+
+## Mode: --ledger
+
+Run the scan as `!npx cli-guardian scan --ledger` (this boots the app under a nock
+sandbox and fuzzes money-moving endpoints for missing idempotency). Then run the
+**default full loop** (the section below) restricted to ledger findings only.
+
+## Mode: --integrity-only
+
+Run `!npx cli-guardian integrity`, print the boxed verdict **verbatim**, and **stop**.
+No scanning, no fixes, no report. That is the whole mode.
+
+---
+
+## The default full loop
+
 You are running the `cli-guardian` quality loop against this repository. Follow these
 steps **exactly**, in order. Do not improvise around them.
 

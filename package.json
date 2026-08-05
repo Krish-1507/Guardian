@@ -1,6 +1,6 @@
 {
   "name": "cli-guardian",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Deterministic scans + your coding agent's own reasoning, in one autonomous quality loop. Adds a /guardian slash-command to any AI coding tool.",
   "license": "MIT",
   "author": "Krish-1507",
@@ -26,7 +26,9 @@
     "demo-repo",
     "demo-repo-integrity",
     "demo-repo-fintech",
-    "demo-repo-generators"
+    "demo-repo-generators",
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=18"

@@ -11,7 +11,10 @@ import {
 } from "../installer/targets.js";
 
 const READY_MESSAGE =
-  "Guardian is ready. Type /guardian in Claude Code, Cursor, OpenCode, Kilo Code, Codex CLI or App or any AI coding tool installed, hit enter, and watch it work.";
+  "Guardian is ready. Type /guardian in Claude Code, Cursor, OpenCode, Kilo Code, Antigravity, Codex CLI or any AI coding tool installed, hit enter, and watch it work.";
+
+const CODEX_APP_MESSAGE =
+  "Codex App and Codex VS Code extension don't support custom slash commands yet (OpenAI hasn't shipped this) — use Codex CLI for /guardian, or copy templates/guardian.prompt.md's content directly into a Codex App chat as a one-off prompt.";
 
 export const install = new Command("install")
   .description("Install the guardian slash-command into Claude Code, Cursor, OpenCode, Kilo Code, Codex")
@@ -59,16 +62,24 @@ export const install = new Command("install")
       fs.mkdirSync(path.dirname(t.path), { recursive: true });
       const exists = fs.existsSync(t.path);
       if (exists && !opts.force) {
-        table.push([t.tool, t.path, chalk.yellow("⚠️  skipped — use --force")]);
+        table.push([t.tool, t.path, chalk.yellow("⚠️ skipped — use --force")]);
         skipped++;
         continue;
       }
       fs.writeFileSync(t.path, renderContent(t, templateText));
-      table.push([t.tool, t.path, chalk.green("✅ installed")]);
+      table.push([t.tool, t.path, chalk.green("✅ Installed")]);
       installed++;
     }
+    // Codex App / Codex VS Code extension: no custom slash commands exist yet,
+    // so there is deliberately NO file written for them — only an honest status.
+    table.push([
+      "Codex App / VS Code extension",
+      "— (none written)",
+      chalk.yellow("⚠️ Manual copy needed"),
+    ]);
 
     console.log(table.toString());
+    console.log(chalk.yellow(CODEX_APP_MESSAGE));
     if (codexNote) {
       console.log(chalk.dim(`Note: ${codexNote}.`));
     }
