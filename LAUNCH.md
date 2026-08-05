@@ -26,7 +26,7 @@ is actually clean.
 Your agent is great at fixing code. It's terrible at *knowing when to stop* — it fixes the
 one thing it noticed and declares victory. Guardian gives it an honest feedback loop:
 
-1. **Scan** → `guardian-cli` runs real tools (`npm audit`, `jest`, a dependency-graph pass,
+1. **Scan** → `cli-guardian` runs real tools (`npm audit`, `jest`, a dependency-graph pass,
    a structural duplicate-function detector) and prints a **boxed root-cause summary** —
    circular deps, security issues, broken tests, copy-paste, flaky tests, unused exports.
 2. **Confirm** → the agent prints *"Found N root-cause clusters covering M issues. Reply
@@ -63,7 +63,7 @@ project seeded with a circular dependency, a hardcoded secret, a known-CVE depen
 duplicated code, and failing tests.
 
 ```bash
-npx guardian-cli demo
+npx cli-guardian demo
 ```
 
 That copies the demo into a temp dir, wires up `/guardian`, and prints where to open it.
@@ -83,7 +83,7 @@ in the code before you watch it get fixed.
 
 ## Show, don't tell
 
-- **Demo (2 min):** the box above is real output — or run `npx guardian-cli demo` locally.
+- **Demo (2 min):** the box above is real output — or run `npx cli-guardian demo` locally.
 - **Report sample:** a full `GUARDIAN_REPORT.md` is generated after every loop.
 - **CI:** guardian runs in CI too — `guardian ci` diffs a PR against its base branch and
   posts one comment (`build-and-smoke` status in the badge below).

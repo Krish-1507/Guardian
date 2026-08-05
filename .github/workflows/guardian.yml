@@ -30,12 +30,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build guardian-cli
+      - name: Build cli-guardian
         run: npm run build
 
       # guardian ci is diagnostic-only and prints a single markdown block to stdout.
       # This repo dogfoods its own build (node dist/cli.js ci); published consumers
-      # run the equivalent `npx guardian-cli ci`.
+      # run the equivalent `npx cli-guardian ci`.
       - name: Run guardian ci (diagnostic-only, read-only)
         run: node dist/cli.js ci > guardian-ci.md
 

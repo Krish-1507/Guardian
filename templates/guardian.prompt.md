@@ -4,7 +4,7 @@ description: "Autonomous engineering quality loop — scans, shows findings, fix
 
 # Guardian — Autonomous Engineering Quality Loop
 
-You are running the `guardian-cli` quality loop against this repository. Follow these
+You are running the `cli-guardian` quality loop against this repository. Follow these
 steps **exactly**, in order. Do not improvise around them.
 
 The loop has exactly **one** mandatory pause: after the first scan (Step 2), before the
@@ -16,7 +16,7 @@ first fix. After that, you act autonomously until a hard stop condition.
 
 Run the scan:
 
-`!npx guardian-cli scan`
+`!npx cli-guardian scan`
 
 Print the **entire boxed output verbatim** as your complete response. Do not summarize
 it, do not add commentary, do not explain it — let the box speak for itself. Nothing else
@@ -69,7 +69,7 @@ root cause is what the scanner claims it is, and what a minimal correct fix look
 
 **d. Capture the bug as a failing test — mandatory, never skippable.**
 
-`!npx guardian-cli repro <finding-id>`
+`!npx cli-guardian repro <finding-id>`
 
 `<finding-id>` is the id printed on the cluster's line in the scan box (and stored in
 `.guardian/scan-latest.json`), e.g. `ledger-3f9a2c01`. Guardian writes a permanent repro
@@ -86,7 +86,7 @@ address the **root cause** (not just a symptom). Stay on the `guardian/*` branch
 
 **f. Prove the same test now passes — mandatory, before any verify.**
 
-`!npx guardian-cli repro <finding-id>`
+`!npx cli-guardian repro <finding-id>`
 
 Run the **same** repro test. It must now report **PASS**.
 If it still **FAILS**, the fix did not address the root cause: revert, revise the hypothesis
@@ -94,7 +94,7 @@ in (c), and retry once (see (i)).
 
 **g. Verify.**
 
-`!npx guardian-cli verify`
+`!npx cli-guardian verify`
 
 Read the result, especially the **Integrity gate** line, the Regression Risk, and the Δ
 columns. This verify run is also the integrity gate: it diffs your uncommitted change against
@@ -129,7 +129,7 @@ commit with a clear message describing the root cause and fix. Commit the repro 
 with** the fix — it is a **permanent regression guard**, never a throwaway, and never delete it.
 Then record it:
 
-`!npx guardian-cli memory add "<finding-id> fixed + proven by guardian-repro-<slug>" --type fix`
+`!npx cli-guardian memory add "<finding-id> fixed + proven by guardian-repro-<slug>" --type fix`
 
 (keep the summary short and factual — this is the "six months later" recall.)
 
@@ -176,7 +176,7 @@ everything is done when it is not. Report how many clusters remain.
 
 On **any** stop condition (success, max iterations, or timeout), run:
 
-`!npx guardian-cli report`
+`!npx cli-guardian report`
 
 and present the resulting **`GUARDIAN_REPORT.md` / boxed output verbatim** as your final
 message. Do not rewrite or summarize it. The report includes **"Fixes shipped with permanent
