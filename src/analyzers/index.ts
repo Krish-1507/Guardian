@@ -9,18 +9,38 @@ import { analyzeDevex } from "./devex.js";
 import { detectLanguage } from "./util.js";
 import type { ScanResult } from "./types.js";
 
-export function runAllAnalyzers(repo: string): ScanResult {
+export interface AnalyzerOptions {
+  /** How many sequential suite runs the flaky detector performs (default 2). */
+  reliabilityRuns?: number;
+}
+
+/**
+ * Run every analyzer. The four subprocess-bound analyzers (security audit,
+ * tests, perf build, reliability suite runs) run in parallel — they spend their
+ * time waiting on child processes, not on CPU. The static analyzers (graph,
+ * duplication, a11y, devex) stay synchronous.
+ */
+export async function runAllAnalyzers(
+  repo: string,
+  opts: AnalyzerOptions = {},
+): Promise<ScanResult> {
+  const [security, tests, perf, reliability] = await Promise.all([
+    analyzeSecurity(repo),
+    analyzeTests(repo),
+    analyzePerf(repo),
+    analyzeReliability(repo, { runs: opts.reliabilityRuns }),
+  ]);
   return {
     timestamp: new Date().toISOString(),
     repo,
     language: detectLanguage(repo),
     dependencyGraph: analyzeDependencyGraph(repo),
-    security: analyzeSecurity(repo),
+    security,
     duplication: analyzeDuplication(repo),
-    tests: analyzeTests(repo),
-    perf: analyzePerf(repo),
+    tests,
+    perf,
     accessibility: analyzeAccessibility(repo),
-    reliability: analyzeReliability(repo),
+    reliability,
     devex: analyzeDevex(repo),
     clusters: [],
   };

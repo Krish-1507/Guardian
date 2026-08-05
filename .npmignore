@@ -1,0 +1,13 @@
+# .npmignore — used INSTEAD of .gitignore when packing.
+# NOTE: "dist" is intentionally NOT listed here: the files whitelist in
+# package.json ships dist/ (the compiled CLI), and an ignore entry for it
+# would break the published package.
+node_modules
+coverage
+.guardian
+*.tgz
+GUARDIAN_REPORT.md
+**/GUARDIAN_REPORT.md
+GUARDIAN_BADGE.svg
+**/GUARDIAN_BADGE.svg
+**/.gitkeep

@@ -57,7 +57,8 @@ fails to substitute arguments into the prompt, Guardian falls back to the menu r
 guessing.
 
 No repo handy? `npx cli-guardian@latest demo` scaffolds a broken demo repo in a temp dir so
-you can watch the whole loop.
+you can watch the whole loop — self-contained, no installs on the hot path, and it never
+writes into your tool configs (that stays an explicit `guardian install`).
 
 ## Tool support
 
@@ -84,9 +85,15 @@ Legacy/alternate locations are also written where tool docs are inconsistent acr
 (`npm audit`, plus `gitleaks` and `semgrep` when installed), duplication (`jscpd`), tests
 (jest/vitest/pytest — pass/fail, duration, coverage), build performance, accessibility,
 reliability (flaky tests, race-condition heuristics), and DevEx (unused exports, duplicate
-functions). A category whose underlying tool isn't installed prints `skipped` instead of a
-made-up number. The box always opens with the **Guardian Score**: a single 0–100 health
-number (with an A–F grade) computed across the categories that actually ran.
+functions). A category whose underlying tool isn't installed prints `skipped` with the
+one-line install hint next to it, instead of a made-up number. The box always opens with the
+**Guardian Score**: a single 0–100 health number (with an A–F grade) computed across the
+categories that actually ran.
+
+Scans are fast by design: the subprocess-bound analyzers run **in parallel**, flaky detection
+runs the suite **twice** by default (`--reliability-runs <n>` to tune; `1` disables it), and
+`npm audit` results are cached (24h, keyed on the lockfile hash) so repeated scans inside one
+fix loop never re-hit the registry.
 
 ### Bonus commands
 

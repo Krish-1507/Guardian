@@ -56,7 +56,7 @@ export const ci = new Command("ci")
       baseSnapshot = fetchBaseSnapshot(repo, baseRef);
       if (baseSnapshot) {
         try {
-          baseResult = analyzeDir(baseSnapshot);
+          baseResult = await analyzeDir(baseSnapshot);
         } catch (err: any) {
           console.error(`[guardian ci] base-branch analysis failed: ${err?.message ?? err}`);
           baseResult = null;
@@ -119,8 +119,8 @@ function buildHeaderNote(baseRef: string, hasBase: boolean): string {
   return bits.join(" · ");
 }
 
-function analyzeDir(dir: string): ScanResult {
-  const result = runAllAnalyzers(dir);
+async function analyzeDir(dir: string): Promise<ScanResult> {
+  const result = await runAllAnalyzers(dir);
   const { clusters } = correlate(dir, result);
   result.clusters = clusters;
   return result;

@@ -2,6 +2,50 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.0] - 2026-08-05
+
+### Changed
+
+- **Faster scans (2.7× on the demo repo).** The four subprocess-bound analyzers (security audit,
+  tests, perf build, reliability suite runs) now run **in parallel**; flaky detection defaults to
+  **2 sequential suite runs** (was 3 — 2 is the minimum that can detect a changed outcome);
+  `npm audit` results are **cached** keyed on the lockfile hash (24h TTL) so repeated scans inside
+  one fix loop stop hitting the registry; jest now caches into `.guardian/cache/jest` so repeat
+  scans skip jest's cold start. `guardian scan --reliability-runs <n>` tunes the flaky-detector
+  cost (1 disables flaky detection, with an honest note).
+- **`guardian demo` is now self-contained.** It no longer runs `npm install` in the hot path and
+  never writes slash commands into the user's tool configs (`~/.claude` etc. stay untouched — that
+  remains an explicit `guardian install`). Demo node_modules is linked (directory junction on
+  Windows, symlink elsewhere) from the fixture's own checkout or a persistent `~/.guardian/cache`
+  — a one-time cached install only happens if neither exists. Demo scans run the suite once, so
+  the wow lands in seconds, and stale `.guardian` baselines are wiped from the temp copy while
+  caches are kept.
+- **Skipped categories now carry install hints.** When a scan category prints `skipped` because a
+  tool is missing (`jscpd`, `pa11y`, `gitleaks`/`semgrep`), the box line includes the one-liner to
+  fix it — `guardian doctor`-lite right inside the report.
+- **Spinner fixes.** Spinners now render on stdout instead of stderr (PowerShell 5.1 painted every
+  frame as a red error record — the first `scan` on Windows looked broken), and non-TTY/CI runs
+  print plain `✓/✗` lines instead of a frozen spinner glyph.
+
+### Added
+
+- **`guardian repro` for circular dependencies.** A circular group can now be captured as a
+  permanent repro test: the test loads every member of the cycle and asserts it initializes
+  cleanly (import() under node:test, require under jest/vitest — dynamic import is refused by
+  jest's VM and a repro that fails for an environmental reason would be a lie). ESM cycles throw
+  at load time (TDZ) and genuinely FAIL; CJS cycles may load lazily and PASS, which is honestly
+  reported as "hypothesis unproven".
+- **Verify baseline staleness warning.** `guardian verify` now detects files changed after the
+  baseline scan and prints a prominent ⚠ warning (also recorded as `stale: true` in the verify
+  report JSON) instead of silently presenting a delta against an outdated snapshot.
+
+### Fixed
+
+- `guardian trends` verify-history lines rendered a chalk function as `(...arguments_) => …`; the
+  score cell is now colored and formatted correctly.
+- Published tarball cleanup: stale `demo-repo-fintech/GUARDIAN_REPORT.md`, `GUARDIAN_BADGE.svg`
+  and leftover `.gitkeep` placeholders no longer ship (`.npmignore` added; fixtures cleaned).
+
 ## [0.4.0] - 2026-08-05
 
 ### Added (the WOW release)

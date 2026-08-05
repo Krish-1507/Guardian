@@ -568,6 +568,89 @@ function a11yRepro(
 }
 
 /* ------------------------------------------------------------------ */
+/* 6. CIRCULAR DEPENDENCY — import the cycle, assert clean init         */
+/* ------------------------------------------------------------------ */
+
+function graphRepro(
+  repo: string,
+  framework: TestFramework,
+  finding: ReproFinding,
+): ReproOutcome {
+  const cycle = (finding.data as { cycle?: string[] } | undefined)?.cycle;
+  if (!cycle || cycle.length < 2) {
+    return {
+      ok: false,
+      reason: "circular finding carries no cycle file list to replay",
+    };
+  }
+  // The repro test is written to the repo root, so relative specifiers with a
+  // "./" prefix resolve against the repo root for both ESM and CJS runners.
+  const rels = cycle.map((f) => {
+    const r = path.relative(repo, f).replace(/\\/g, "/");
+    return r.startsWith(".") ? r : "./" + r;
+  });
+  const cycleLabel = cycle
+    .map((f) => path.relative(repo, f).replace(/\\/g, "/"))
+    .join(" → ");
+  const slug = reproSlug(finding);
+  const header = [
+    `// Guardian repro test — finding ${finding.id}`,
+    `// Linked from .guardian/scan-latest.json.`,
+    `//`,
+    `// CIRCULAR LOAD PROBE: the scan flagged a module cycle:`,
+    `//   ${cycleLabel}`,
+    `// ${finding.description}`,
+    `// This test loads every member of the cycle (import() for ESM runners,`,
+    `// require() under jest/vitest) and asserts each initializes cleanly. ESM`,
+    `// cycles throw at load time (TDZ / "Cannot access 'x' before initialization")`,
+    `// — those FAIL here and prove the bug. CJS cycles load lazily, so a CJS cycle`,
+    `// may silently PASS: then this probe is a hygiene / deadlock-risk reminder,`,
+    `// and the fix loop must re-diagnose rather than pretend the cycle is harmless.`,
+  ].join("\n");
+
+  const body: string[] = [];
+  if (isJestLike(framework)) {
+    // jest's VM refuses dynamic import() without --experimental-vm-modules, and
+    // a repro that fails for an environmental reason is a lie. CJS libs can be
+    // required natively, so generate one require per cycle member instead.
+    const vars: string[] = [];
+    rels.forEach((r, i) => {
+      vars.push(`m${i}`);
+      body.push(`const m${i} = require(${JSON.stringify(r)});`);
+    });
+    body.push(
+      ``,
+      `test("guardian repro ${finding.id}: every member of the cycle initializes cleanly", () => {`,
+      `  const MODS = [${vars.join(", ")}];`,
+      `  MODS.forEach((mod, i) => {`,
+      `    for (const [k, v] of Object.entries(mod)) {`,
+      `      if (k === "default") continue;`,
+      `      assert.notEqual(v, undefined, "export '" + k + "' of " + CYCLE[i] + " is undefined after load");`,
+      `    }`,
+      `  });`,
+      `});`,
+    );
+    body.unshift(`const CYCLE = ${JSON.stringify(rels)};`, ``);
+  } else {
+    body.push(
+      `const MODS = await Promise.all(${JSON.stringify(rels)}.map((m) => import(m)));`,
+      ``,
+      `test("guardian repro ${finding.id}: every member of the cycle initializes cleanly", async () => {`,
+      `  MODS.forEach((mod, i) => {`,
+      `    for (const [k, v] of Object.entries(mod)) {`,
+      `      if (k === "default") continue;`,
+      `      assert.notEqual(v, undefined, "export '" + k + "' of " + ${JSON.stringify(rels)}[i] + " is undefined after load");`,
+      `    }`,
+      `  });`,
+      `});`,
+    );
+  }
+
+  const file = writeTest(repo, framework, slug, assemble(framework, header, body.join("\n")));
+  return { ok: true, file, framework };
+}
+
+/* ------------------------------------------------------------------ */
 
 export function generateRepro(
   repo: string,
@@ -592,6 +675,14 @@ export function generateRepro(
       return perfRepro(repo, framework, finding, scan);
     case "a11y":
       return a11yRepro(repo, framework, finding);
+    case "graph":
+      if (finding.type === "circular") return graphRepro(repo, framework, finding);
+      return {
+        ok: false,
+        reason:
+          `graph findings of type "${finding.type}" cannot be replayed as a failing test — ` +
+          "no genuine repro generator exists for them",
+      };
     default:
       return {
         ok: false,

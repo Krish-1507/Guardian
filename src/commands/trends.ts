@@ -102,7 +102,9 @@ export const trends = new Command("trends")
       for (const v of hist.verifies) {
         const risk = v.risk === "High" ? chalk.red(v.risk) : v.risk === "Medium" ? chalk.yellow(v.risk) : chalk.green(v.risk);
         const s = v.score;
-        const sc = s ? ` · ${gradeColorFn(s.grade)}(${s.current}/100 ${s.grade}${s.delta !== 0 ? `, ${s.delta > 0 ? "+" : ""}${s.delta}` : ""})` : "";
+        const sc = s
+          ? ` · ${gradeColorFn(s.grade)(`${s.current}/100 ${s.grade}${s.delta !== 0 ? `, ${s.delta > 0 ? "+" : ""}${s.delta}` : ""}`)}`
+          : "";
         const integ = v.integrity
           ? ` · integrity ${v.integrity.verdict === "CLEAN" ? chalk.green("CLEAN") : v.integrity.verdict === "SUSPICIOUS" ? chalk.yellow("SUSPICIOUS") : chalk.red("CONFIRMED_CHEAT")}`
           : "";

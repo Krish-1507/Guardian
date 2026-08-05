@@ -147,7 +147,9 @@ export const inspect = new Command("inspect")
     const c = clusterOf(result, id);
     const paint = severityPaint(f.severity);
     const loc = f.file ? `${rel(repo, f.file)}${f.line ? ":" + f.line : ""}` : "no file location";
-    const reproCapable = ["security", "a11y", "reliability", "devex", "ledger", "perf"].includes(f.source);
+    const reproCapable = ["security", "a11y", "reliability", "devex", "ledger", "perf", "graph"].includes(
+      f.source,
+    );
 
     const proofs = loadProofs(repo).filter((p) => p.findingId === id);
     const proofLines =

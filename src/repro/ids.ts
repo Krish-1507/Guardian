@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import type {
   ClusterFinding,
   FlakyTest,
@@ -122,6 +123,21 @@ export function enumerateFindings(r: ScanResult): ReproFinding[] {
       description: `flaky test (outcome changed across ${r.reliability.runs} runs): ${f.name}`,
       file: f.file,
       data: f,
+    });
+  }
+  // Circular groups get a repro generator (`graphRepro`) that imports the cycle
+  // and asserts it initializes cleanly. The id MUST match collectFindings in
+  // graph/correlate.ts, which seeds on the absolute first node + relative chain.
+  for (const cycle of r.dependencyGraph.circular) {
+    const files = cycle.map((f) => path.relative(r.repo, f));
+    out.push({
+      id: findingIdFor("graph", "circular", cycle[0], files.join(" → ")),
+      source: "graph",
+      severity: "medium",
+      type: "circular",
+      description: `circular dependency: ${files.join(" → ")}`,
+      file: cycle[0],
+      data: { cycle },
     });
   }
   pushIssues(out, r.devex.unusedExports, "devex");

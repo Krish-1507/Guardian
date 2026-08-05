@@ -1,25 +1,31 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { commandExists, detectLanguage, safeExec } from "./util.js";
+import { commandExists, detectLanguage, safeExecAsync } from "./util.js";
 import type { ScanIssue, SecurityResult } from "./types.js";
 
-export function analyzeSecurity(repo: string): SecurityResult {
+/** How long an npm-audit result is reused before re-fetching from the registry. */
+const AUDIT_TTL_MS = 24 * 60 * 60 * 1000;
+
+export async function analyzeSecurity(repo: string): Promise<SecurityResult> {
   const lang = detectLanguage(repo);
   const issues: ScanIssue[] = [];
 
   if (lang === "js") {
     // npm audit exits 1 when vulnerabilities exist but still prints the full
-    // JSON — capture stdout and persist it for parsing either way.
-    const auditFile = path.join(repo, ".guardian", "npm-audit.json");
-    fs.mkdirSync(path.dirname(auditFile), { recursive: true });
-    const r = safeExec("npm", ["audit", "--json"], repo, 120000);
-    if (r.stdout) {
-      fs.writeFileSync(auditFile, r.stdout);
-      issues.push(...parseNpmAudit(r.stdout));
+    // JSON — capture stdout and persist it for parsing either way. The result
+    // is cached keyed on the lockfile hash: an unchanged lockfile (the common
+    // case inside one fix loop) makes the audit network call disappear.
+    const stdout = await npmAudit(repo);
+    if (stdout) {
+      const auditFile = path.join(repo, ".guardian", "npm-audit.json");
+      fs.mkdirSync(path.dirname(auditFile), { recursive: true });
+      fs.writeFileSync(auditFile, stdout);
+      issues.push(...parseNpmAudit(stdout));
     }
   } else if (lang === "python") {
     if (commandExists("pip-audit")) {
-      const r = safeExec("pip-audit", ["-f", "json"], repo, 120000);
+      const r = await safeExecAsync("pip-audit", ["-f", "json"], repo, 120000);
       if (r.stdout) issues.push(...parsePipAudit(r.stdout));
     }
   }
@@ -27,7 +33,7 @@ export function analyzeSecurity(repo: string): SecurityResult {
   if (commandExists("gitleaks")) {
     const tmp = path.join(repo, ".guardian", `gitleaks-${Date.now()}.json`);
     fs.mkdirSync(path.dirname(tmp), { recursive: true });
-    const r = safeExec(
+    const r = await safeExecAsync(
       "gitleaks",
       ["detect", "--no-git", "--report-format", "json", "--report-path", tmp, "-v"],
       repo,
@@ -48,7 +54,7 @@ export function analyzeSecurity(repo: string): SecurityResult {
   }
 
   if (commandExists("semgrep")) {
-    const r = safeExec("semgrep", ["--config", "auto", "--json"], repo, 180000);
+    const r = await safeExecAsync("semgrep", ["--config", "auto", "--json"], repo, 180000);
     if (r.stdout) issues.push(...parseSemgrep(r.stdout));
   }
 
@@ -61,6 +67,53 @@ export function analyzeSecurity(repo: string): SecurityResult {
   }
 
   return { status: "ok", issues };
+}
+
+async function npmAudit(repo: string): Promise<string | null> {
+  const lockCandidate = ["package-lock.json", "npm-shrinkwrap.json", "package.json"].find(
+    (f) => fs.existsSync(path.join(repo, f)),
+  );
+  if (!lockCandidate) return null;
+  const hash = crypto
+    .createHash("sha1")
+    .update(fs.readFileSync(path.join(repo, lockCandidate)))
+    .digest("hex")
+    .slice(0, 12);
+
+  const cacheDir = path.join(repo, ".guardian", "cache");
+  fs.mkdirSync(cacheDir, { recursive: true });
+  const cachePath = path.join(cacheDir, `npm-audit-${hash}.json`);
+  if (fs.existsSync(cachePath)) {
+    try {
+      const cached = JSON.parse(fs.readFileSync(cachePath, "utf8")) as {
+        at?: string;
+        stdout?: string;
+      };
+      if (
+        cached &&
+        typeof cached.stdout === "string" &&
+        typeof cached.at === "string" &&
+        Date.now() - Date.parse(cached.at) < AUDIT_TTL_MS
+      ) {
+        return cached.stdout;
+      }
+    } catch {
+      /* stale or corrupt — re-fetch */
+    }
+  }
+
+  const r = await safeExecAsync("npm", ["audit", "--json"], repo, 120000);
+  if (r.stdout) {
+    try {
+      fs.writeFileSync(
+        cachePath,
+        JSON.stringify({ at: new Date().toISOString(), stdout: r.stdout }),
+      );
+    } catch {
+      /* cache write is best-effort */
+    }
+  }
+  return r.stdout || null;
 }
 
 function parseNpmAudit(stdout: string): ScanIssue[] {

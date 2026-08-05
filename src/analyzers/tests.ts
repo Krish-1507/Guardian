@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { commandExists, detectLanguage, safeExec } from "./util.js";
+import { commandExists, detectLanguage, safeExecAsync } from "./util.js";
 import type { TestsResult } from "./types.js";
 
-export function analyzeTests(repo: string): TestsResult {
+export async function analyzeTests(repo: string): Promise<TestsResult> {
   const lang = detectLanguage(repo);
   const empty: TestsResult = {
     status: "skipped",
@@ -17,7 +17,7 @@ export function analyzeTests(repo: string): TestsResult {
   if (lang === "python") {
     if (!commandExists("pytest")) return empty;
     const start = performance.now();
-    const r = safeExec("pytest", ["-q"], repo, 180000);
+    const r = await safeExecAsync("pytest", ["-q"], repo, 180000);
     const durationMs = Math.round(performance.now() - start);
     const m = r.stdout.match(/(\d+)\s+passed/);
     const failed = r.stdout.match(/(\d+)\s+failed/);
@@ -71,7 +71,7 @@ function jestCommand(repo: string): { cmd: string; args: string[] } {
   return { cmd: "", args: [] };
 }
 
-function runJest(repo: string): TestsResult {
+async function runJest(repo: string): Promise<TestsResult> {
   const j = jestCommand(repo);
   if (!j.cmd) {
     return {
@@ -83,10 +83,12 @@ function runJest(repo: string): TestsResult {
       durationMs: 0,
     };
   }
+  const cacheDir = path.join(repo, ".guardian", "cache", "jest");
+  fs.mkdirSync(cacheDir, { recursive: true });
   const start = performance.now();
-  const r = safeExec(
+  const r = await safeExecAsync(
     j.cmd,
-    [...j.args, "--json", "--coverage", "--coverageReporters=json-summary"],
+    [...j.args, "--json", "--coverage", "--coverageReporters=json-summary", "--cacheDirectory", cacheDir],
     repo,
     180000,
   );
@@ -133,7 +135,7 @@ function vitestCommand(repo: string): { cmd: string; args: string[] } {
   return { cmd: "", args: [] };
 }
 
-function runVitest(repo: string): TestsResult {
+async function runVitest(repo: string): Promise<TestsResult> {
   const v = vitestCommand(repo);
   if (!v.cmd) {
     return {
@@ -148,7 +150,7 @@ function runVitest(repo: string): TestsResult {
   const tmp = path.join(repo, ".guardian", "vitest-report.json");
   fs.mkdirSync(path.dirname(tmp), { recursive: true });
   const start = performance.now();
-  const r = safeExec(
+  const r = await safeExecAsync(
     v.cmd,
     [...v.args, "run", "--reporter=json", "--outputFile", tmp],
     repo,

@@ -3,4 +3,5 @@ dist
 coverage
 .guardian
 GUARDIAN_REPORT.md
+GUARDIAN_BADGE.svg
 *.tgz

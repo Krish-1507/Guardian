@@ -1,7 +1,6 @@
 import { Command } from "commander";
 import chalk, { type ChalkInstance } from "chalk";
 import boxen from "boxen";
-import ora from "ora";
 import path from "node:path";
 import fs from "node:fs";
 import { runAllAnalyzers } from "../analyzers/index.js";
@@ -10,6 +9,7 @@ import { correlate } from "../graph/correlate.js";
 import { relevantEntriesForFiles, type MemoryType } from "../memory/store.js";
 import { stampFindings, findingIdFor } from "../repro/ids.js";
 import { computeScore, type ScoreResult } from "../report/score.js";
+import { createSpinner } from "../ui/spinner.js";
 import type { ScanResult } from "../analyzers/types.js";
 
 function memTypeColor(t: MemoryType): (s: string) => string {
@@ -40,6 +40,30 @@ function scorePaint(s: ScoreResult): ChalkInstance {
   }
 }
 
+/**
+ * One-line fix for a category that printed "skipped" because a dependency was
+ * missing. Doubles as `guardian doctor`-lite, right inside the box, so a fresh
+ * machine's first scan never looks like the product is half-missing.
+ */
+const SKIPPED_HINTS: [RegExp, string][] = [
+  [/jscpd not found/i, "install: npm i -g jscpd"],
+  [/pa11y\/axe/i, "install: npm i -g pa11y (falls back to static JSX lint)"],
+  [/pa11y/i, "install: npm i -g pa11y"],
+  [/unsupported language/i, "install: npm i -g gitleaks · pip install semgrep"],
+  [/semgrep can?t/i, "install: pip install semgrep"],
+];
+
+function skipHint(note?: string): string {
+  if (!note) return "";
+  for (const [re, hint] of SKIPPED_HINTS) if (re.test(note)) return hint;
+  return "";
+}
+
+function skippedLine(status: string, note?: string): string {
+  const hint = skipHint(note);
+  return `skipped — ${note ?? "unavailable"}${hint ? ` · ${chalk.cyan(hint)}` : ""}`;
+}
+
 export function renderBox(r: ScanResult): string {
   const lines: string[] = [];
 
@@ -68,7 +92,7 @@ export function renderBox(r: ScanResult): string {
     }
   } else {
     lines.push(
-      `${label("Dependency Graph")}: ${chalk.yellow("skipped")} — ${dg.note ?? "unavailable"}`,
+      `${label("Dependency Graph")}: ${chalk.yellow(skippedLine(dg.status, dg.note))}`,
     );
   }
 
@@ -100,7 +124,7 @@ export function renderBox(r: ScanResult): string {
     }
   } else {
     lines.push(
-      `${label("Security")}: ${chalk.yellow("skipped")} — ${sec.note ?? "unavailable"}`,
+      `${label("Security")}: ${chalk.yellow(skippedLine(sec.status, sec.note))}`,
     );
   }
 
@@ -164,7 +188,7 @@ export function renderBox(r: ScanResult): string {
     }
   } else {
     lines.push(
-      `${label("Duplication")}: ${chalk.yellow("skipped")} — ${dup.note ?? "unavailable"}`,
+      `${label("Duplication")}: ${chalk.yellow(skippedLine(dup.status, dup.note))}`,
     );
   }
 
@@ -180,7 +204,7 @@ export function renderBox(r: ScanResult): string {
     );
   } else {
     lines.push(
-      `${label("Tests")}: ${chalk.yellow("skipped")} — ${t.note ?? "unavailable"}`,
+      `${label("Tests")}: ${chalk.yellow(skippedLine(t.status, t.note))}`,
     );
   }
 
@@ -192,7 +216,7 @@ export function renderBox(r: ScanResult): string {
     );
   } else {
     lines.push(
-      `${label("Performance")}: ${chalk.yellow("skipped")} — ${p.note ?? "unavailable"}`,
+      `${label("Performance")}: ${chalk.yellow(skippedLine(p.status, p.note))}`,
     );
   }
 
@@ -211,7 +235,7 @@ export function renderBox(r: ScanResult): string {
     lines.push(`${label("Accessibility")}: ${body}${eng}`);
   } else {
     lines.push(
-      `${label("Accessibility")}: ${chalk.yellow("skipped")} — ${a.note ?? "unavailable"}`,
+      `${label("Accessibility")}: ${chalk.yellow(skippedLine(a.status, a.note))}`,
     );
   }
 
@@ -229,7 +253,7 @@ export function renderBox(r: ScanResult): string {
     lines.push(`${label("Reliability")}: ${flaky} · ${smells}${runs}`);
   } else {
     lines.push(
-      `${label("Reliability")}: ${chalk.yellow("skipped")} — ${reliab.note ?? "unavailable"}`,
+      `${label("Reliability")}: ${chalk.yellow(skippedLine(reliab.status, reliab.note))}`,
     );
   }
 
@@ -246,7 +270,7 @@ export function renderBox(r: ScanResult): string {
     lines.push(`${label("Devex")}: ${unused} · ${dups}`);
   } else {
     lines.push(
-      `${label("Devex")}: ${chalk.yellow("skipped")} — ${dx.note ?? "unavailable"}`,
+      `${label("Devex")}: ${chalk.yellow(skippedLine(dx.status, dx.note))}`,
     );
   }
 
@@ -264,18 +288,22 @@ export function renderBox(r: ScanResult): string {
   });
 }
 
+export interface RunScanOptions {
+  ledger?: boolean;
+  reliabilityRuns?: number;
+}
+
 export async function runScan(
   repo: string,
-  opts?: { ledger?: boolean },
+  opts: RunScanOptions = {},
 ): Promise<{ result: ScanResult; file: string }> {
-  const result = runAllAnalyzers(repo);
+  const result = await runAllAnalyzers(repo, { reliabilityRuns: opts.reliabilityRuns });
 
   // Ledger mode is invasive (it boots the app and probes live endpoints), so it
   // never runs unless explicitly requested via `--ledger`.
   if (opts?.ledger) {
     result.ledger = await runLedgerAnalyzer(repo);
   }
-
   // Stable finding ids first, so clusters and scan-latest.json carry the ids
   // that `guardian repro <id>` (and committed repro tests) reference.
   stampFindings(result);
@@ -302,39 +330,57 @@ export const scan = new Command("scan")
       "idempotency. Never runs unless --ledger is passed.",
   )
   .option("--json", "print the raw scan result as JSON instead of the boxed report")
-  .action(async (repoArg: string, options: { ledger?: boolean; json?: boolean }) => {
-    const repo = path.resolve(repoArg);
-    if (!options.json) {
-      console.log(
-        chalk.cyan(`\nScanning ${repo}${options.ledger ? " with --ledger" : ""} ...\n`),
-      );
-    }
-
-    const run = async () => {
-      const { result, file } = await runScan(repo, { ledger: options.ledger });
-      return { result, file };
-    };
-
-    let result: ScanResult;
-    let file: string;
-    if (options.json) {
-      ({ result, file } = await run());
-    } else {
-      const spin = ora("Running analyzers").start();
-      try {
-        ({ result, file } = await run());
-        spin.succeed("Scan complete");
-      } catch (err: any) {
-        spin.fail("Scan failed");
-        throw err;
+  .option(
+    "--reliability-runs <n>",
+    "how many sequential times the test suite runs for flaky detection (default 2; " +
+      "1 disables flaky detection, >2 costs an extra full suite run each)",
+    "2",
+  )
+  .action(
+    async (
+      repoArg: string,
+      options: { ledger?: boolean; json?: boolean; reliabilityRuns?: string },
+    ) => {
+      const repo = path.resolve(repoArg);
+      const reliabilityRuns = Math.max(1, Math.floor(Number(options.reliabilityRuns) || 2));
+      if (!options.json) {
+        console.log(
+          chalk.cyan(
+            `\nScanning ${repo}${options.ledger ? " with --ledger" : ""} ` +
+              `(reliability: ${reliabilityRuns} run${reliabilityRuns > 1 ? "s" : ""}) ...\n`,
+          ),
+        );
       }
-    }
 
-    if (options.json) {
-      console.log(JSON.stringify(result, null, 2));
-      return;
-    }
+      const run = async () => {
+        const { result, file } = await runScan(repo, {
+          ledger: options.ledger,
+          reliabilityRuns,
+        });
+        return { result, file };
+      };
 
-    console.log(renderBox(result));
-    console.log(chalk.dim(`\nReports written to ${file}\n`));
-  });
+      let result: ScanResult;
+      let file: string;
+      if (options.json) {
+        ({ result, file } = await run());
+      } else {
+        const spin = createSpinner("Running analyzers");
+        try {
+          ({ result, file } = await run());
+          spin.succeed("Scan complete");
+        } catch (err: any) {
+          spin.fail("Scan failed");
+          throw err;
+        }
+      }
+
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      console.log(renderBox(result));
+      console.log(chalk.dim(`\nReports written to ${file}\n`));
+    },
+  );

@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { dirSize, safeExec } from "./util.js";
+import { dirSize, safeExecAsync } from "./util.js";
 import type { PerfResult } from "./types.js";
 
-export function analyzePerf(repo: string): PerfResult {
+export async function analyzePerf(repo: string): Promise<PerfResult> {
   const pkgPath = path.join(repo, "package.json");
   if (!fs.existsSync(pkgPath)) {
     return { status: "skipped", note: "no package.json" };
@@ -20,7 +20,7 @@ export function analyzePerf(repo: string): PerfResult {
   }
 
   const start = performance.now();
-  const build = safeExec("npm", ["run", "build"], repo, 240000);
+  const build = await safeExecAsync("npm", ["run", "build"], repo, 240000);
   if (build.code !== 0) {
     return {
       status: "skipped",

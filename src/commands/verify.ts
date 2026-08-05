@@ -9,6 +9,7 @@ import { analyzePerf } from "../analyzers/perf.js";
 import { analyzeSecurity } from "../analyzers/security.js";
 import { analyzeDuplication } from "../analyzers/duplication.js";
 import { addEntry } from "../memory/store.js";
+import { newestModifiedFile } from "../analyzers/util.js";
 import type { ScanResult, ScanIssue } from "../analyzers/types.js";
 import type { VerifyMetrics } from "../report/format.js";
 import { classifyRisk, deltasOf, metricsOf } from "../verify/metrics.js";
@@ -45,11 +46,13 @@ function readBaseline(repo: string): ScanResult | null {
   }
 }
 
-function currentMetrics(repo: string): VerifyMetrics {
-  const tests = analyzeTests(repo);
-  const perf = analyzePerf(repo);
-  const security = analyzeSecurity(repo);
-  const duplication = analyzeDuplication(repo);
+async function currentMetrics(repo: string): Promise<VerifyMetrics> {
+  const [tests, perf, security, duplication] = await Promise.all([
+    analyzeTests(repo),
+    analyzePerf(repo),
+    analyzeSecurity(repo),
+    analyzeDuplication(repo),
+  ]);
   return {
     tests: {
       total: tests.total,
@@ -156,8 +159,23 @@ export const verify = new Command("verify")
       return;
     }
     const baseline = metricsOf(baselineResult);
-    const current = currentMetrics(repo);
+    const current = await currentMetrics(repo);
     const d = deltasOf(baseline, current);
+
+    // Baseline staleness: if files changed after the baseline scan, the delta
+    // and score are computed against a snapshot that no longer matches the
+    // working tree — warn loudly instead of silently presenting stale math.
+    let staleNote = "";
+    const newest = newestModifiedFile(repo);
+    const baselineAt = Date.parse(baselineResult.timestamp);
+    if (newest && baselineAt && newest.mtimeMs > baselineAt + 1000) {
+      const relFile = path.relative(repo, newest.file) || newest.file;
+      staleNote =
+        `baseline is STALE — ${relFile} changed ${new Date(newest.mtimeMs).toISOString()}, ` +
+        `after the baseline scan (${baselineResult.timestamp}). Score delta vs baseline is ` +
+        "approximate; re-run `guardian scan` for a fresh baseline.";
+    }
+    const stale = staleNote !== "";
 
     const risk = classifyRisk(baseline, current, d);
 
@@ -269,8 +287,11 @@ export const verify = new Command("verify")
       }
     }
 
-    const contentParts = integrityParts.length > 0 ? [...integrityParts, ""] : [];
-    contentParts.push(riskLine);
+    const contentParts: string[] = [];
+    if (stale) {
+      contentParts.push(chalk.yellow(`⚠ ${staleNote}`), "");
+    }
+    contentParts.push(...integrityParts, riskLine);
     contentParts.push("", table.toString());
     const content = contentParts.join("\n");
 
@@ -296,6 +317,8 @@ export const verify = new Command("verify")
       baselineTimestamp: baselineResult.timestamp,
       risk,
       blocked,
+      stale,
+      staleNote: stale ? staleNote : undefined,
       status: blocked ? "BLOCKED" : "OK",
       exitCode: blocked
         ? integrity.verdict === "CONFIRMED_CHEAT"

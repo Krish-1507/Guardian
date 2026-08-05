@@ -1,4 +1,4 @@
-import { execaSync, type SyncResult } from "execa";
+import { execaSync, execa, type SyncResult } from "execa";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -51,6 +51,37 @@ export function safeExec(
   };
 }
 
+/**
+ * Async twin of safeExec for analyzers that should run in parallel (security,
+ * tests, reliability, perf all spend their time waiting on subprocesses).
+ */
+export async function safeExecAsync(
+  file: string,
+  args: string[],
+  cwd: string,
+  timeoutMs = 120000,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const asStr = (v: unknown): string => (typeof v === "string" ? v : v instanceof Buffer ? v.toString() : "");
+  try {
+    const res = await execa(file, args, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: timeoutMs,
+      windowsHide: true,
+      maxBuffer: 50 * 1024 * 1024,
+      reject: false,
+    });
+    return {
+      code: typeof res.exitCode === "number" ? res.exitCode : res.failed ? 1 : -1,
+      stdout: asStr(res.stdout),
+      stderr: asStr(res.stderr),
+    };
+  } catch (err: any) {
+    return { code: -1, stdout: "", stderr: err?.message ?? String(err) };
+  }
+}
+
 /** 1-based line number of a character index in a string. */
 export function lineOf(content: string, index: number): number {
   let line = 1;
@@ -85,6 +116,40 @@ const IGNORE_DIRS = new Set([
   "demo-repo",
   "templates",
 ]);
+
+/**
+ * Newest file mtime under a repo (skipping generated/ignored dirs), used to
+ * detect whether a baseline scan has gone stale relative to the working tree.
+ */
+export function newestModifiedFile(root: string): { file: string; mtimeMs: number } | null {
+  let best: { file: string; mtimeMs: number } | null = null;
+  const stack = [root];
+  while (stack.length) {
+    const dir = stack.pop() as string;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (IGNORE_DIRS.has(e.name) || e.name.startsWith(".")) continue;
+        stack.push(path.join(dir, e.name));
+      } else if (e.isFile()) {
+        try {
+          const st = fs.statSync(path.join(dir, e.name));
+          if (!best || st.mtimeMs > best.mtimeMs) {
+            best = { file: path.join(dir, e.name), mtimeMs: st.mtimeMs };
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+  return best;
+}
 
 export function walkFiles(root: string, exts: string[]): string[] {
   const out: string[] = [];

@@ -1,12 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
-import { commandExists, safeExec, walkFiles, lineOf } from "./util.js";
+import { commandExists, safeExecAsync, walkFiles, lineOf } from "./util.js";
 import type { FlakyTest, ReliabilityResult, ScanIssue } from "./types.js";
 
 /** Only bother with flakiness detection when the suite is fast enough. */
 const MAX_SUITE_MS = 60_000;
-/** Sequential runs; we deliberately run serially so runs perturb each other as little as possible. */
-const RUNS = 3;
+/**
+ * Sequential runs; we deliberately run serially so runs perturb each other as
+ * little as possible. 2 runs is the minimum that can detect a changed outcome;
+ * pass a higher `runs` for a stronger signal (cost: N× suite time).
+ */
+const DEFAULT_RUNS = 2;
+const MIN_RUNS_FOR_FLAKY = 2;
 const MAX_FLAKY_REPORTED = 20;
 const JS_EXTS = [".js", ".jsx", ".ts", ".tsx"];
 
@@ -15,18 +20,24 @@ const JS_EXTS = [".js", ".jsx", ".ts", ".tsx"];
  *
  * HONEST CAVEATS (heuristics, never certainty):
  *
- * - Flaky-test detection works by running the suite RUNS times IN SEQUENCE and
+ * - Flaky-test detection works by running the suite `runs` times IN SEQUENCE and
  *   flagging any test whose pass/fail changed between runs. Running the suite
- *   three times can itself perturb results (cache warm-up, shuffle order), and a
- *   genuinely flaky test may not flake within 3 runs — absence of a finding is NOT
- *   proof the suite is stable. We only run this when the suite is fast (<60s);
- *   a slow suite is skipped with a note.
+ *   multiple times can itself perturb results (cache warm-up, shuffle order), and a
+ *   genuinely flaky test may not flake within the runs executed — absence of a
+ *   finding is NOT proof the suite is stable. We only run this when the suite is
+ *   fast (<60s); a slow suite is skipped with a note. With `runs < 2` the flaky
+ *   detector cannot run (it needs two observed outcomes), so only the race-smell
+ *   heuristic is reported and the note says so.
  * - The race-condition "smells" (timer-based waits, module-scope mutable state
  *   reassigned near async code) are a cheap static grep. Every one of them is
  *   labeled "heuristic, needs human review". A smell is a hint to look, not an
  *   assertion that a bug exists.
  */
-export function analyzeReliability(repo: string): ReliabilityResult {
+export async function analyzeReliability(
+  repo: string,
+  opts: { runs?: number } = {},
+): Promise<ReliabilityResult> {
+  const runsRequested = Math.max(1, Math.floor(opts.runs ?? DEFAULT_RUNS));
   const skipped = (note: string): ReliabilityResult => ({
     status: "skipped",
     note,
@@ -39,7 +50,7 @@ export function analyzeReliability(repo: string): ReliabilityResult {
   // Race-smell grep is independent of the test runner and always attempted.
   const raceSmells = scanRaceSmells(repo);
 
-  const first = runSuite(repo);
+  const first = await runSuite(repo);
   if (!first) {
     // No runnable suite — but surface races if any were found.
     return raceSmells.length > 0
@@ -57,7 +68,7 @@ export function analyzeReliability(repo: string): ReliabilityResult {
   if (first.durationMs >= MAX_SUITE_MS) {
     return {
       status: raceSmells.length > 0 ? "ok" : "skipped",
-      note: `test suite took ${first.durationMs}ms (>= 60s) — too slow to run ${RUNS}x; only the race-smell heuristic ran`,
+      note: `test suite took ${first.durationMs}ms (>= 60s) — too slow to run ${runsRequested}x; only the race-smell heuristic ran`,
       runs: 1,
       durationMs: first.durationMs,
       suiteDurationMs: first.durationMs,
@@ -66,20 +77,27 @@ export function analyzeReliability(repo: string): ReliabilityResult {
     };
   }
 
-  const runs = [first, runSuite(repo), runSuite(repo)].filter(
-    (r): r is NonNullable<typeof r> => r !== null,
-  );
+  // Flaky detection needs at least two observed outcomes per test.
+  const runs = [first];
+  for (let i = 1; i < runsRequested; i++) {
+    const r = await runSuite(repo);
+    if (r) runs.push(r);
+  }
 
+  let note: string | undefined;
+  if (runs.length < MIN_RUNS_FOR_FLAKY) {
+    note =
+      "flaky detection needs >= 2 suite runs; runs=1 means only the race-smell heuristic was checked";
+  } else if (raceSmells.length > 0 || detectFlaky(runs).length > 0) {
+    note = "findings are heuristics — confirm each before acting";
+  }
   const flakyTests = detectFlaky(runs);
 
   const totalDuration = runs.reduce((n, r) => n + r.durationMs, 0);
 
   return {
     status: "ok",
-    note:
-      flakyTests.length > 0 || raceSmells.length > 0
-        ? "findings are heuristics — confirm each before acting"
-        : undefined,
+    note,
     runs: runs.length,
     durationMs: totalDuration,
     suiteDurationMs: first.durationMs,
@@ -99,9 +117,9 @@ interface RunResult {
   durationMs: number;
 }
 
-function runSuite(repo: string): RunResult | null {
+function runSuite(repo: string): Promise<RunResult | null> {
   if (!fs.existsSync(path.join(repo, "package.json"))) {
-    return commandExists("pytest") ? runPytest(repo) : null;
+    return commandExists("pytest") ? runPytest(repo) : Promise.resolve(null);
   }
   let pkg: any = {};
   try {
@@ -116,10 +134,10 @@ function runSuite(repo: string): RunResult | null {
   if (deps.jest && hasBin("jest")) return runJest(repo);
   if (deps.vitest && hasBin("vitest")) return runVitest(repo);
   if (commandExists("pytest")) return runPytest(repo);
-  return null;
+  return Promise.resolve(null);
 }
 
-function runJest(repo: string): RunResult | null {
+async function runJest(repo: string): Promise<RunResult | null> {
   let cmd: string;
   let args: string[];
   const local = path.join(repo, "node_modules", "jest", "bin", "jest.js");
@@ -133,7 +151,9 @@ function runJest(repo: string): RunResult | null {
     return null;
   }
   const start = performance.now();
-  const r = safeExec(cmd, [...args, "--json"], repo, 180000);
+  const cacheDir = path.join(repo, ".guardian", "cache", "jest");
+  fs.mkdirSync(cacheDir, { recursive: true });
+  const r = await safeExecAsync(cmd, [...args, "--json", "--cacheDirectory", cacheDir], repo, 180000);
   const durationMs = Math.round(performance.now() - start);
   // jest exits 0 on pass, 1 on failure — both are valid outputs.
   if (r.code !== 0 && r.code !== 1) return null;
@@ -161,7 +181,7 @@ function runJest(repo: string): RunResult | null {
   };
 }
 
-function runVitest(repo: string): RunResult | null {
+async function runVitest(repo: string): Promise<RunResult | null> {
   let cmd: string;
   let args: string[];
   const local = path.join(repo, "node_modules", "vitest", "vitest.mjs");
@@ -177,7 +197,7 @@ function runVitest(repo: string): RunResult | null {
   const tmp = path.join(repo, ".guardian", "vitest-reliability.json");
   fs.mkdirSync(path.dirname(tmp), { recursive: true });
   const start = performance.now();
-  safeExec(cmd, [...args, "run", "--reporter=json", "--outputFile", tmp], repo, 180000);
+  await safeExecAsync(cmd, [...args, "run", "--reporter=json", "--outputFile", tmp], repo, 180000);
   const durationMs = Math.round(performance.now() - start);
   let json: any;
   if (fs.existsSync(tmp)) {
@@ -210,9 +230,9 @@ function runVitest(repo: string): RunResult | null {
  * pytest: `-q` only exposes per-suite counts, not per-test names. We model the
  * whole run as one pseudo-test so a changing pass/fail between runs still flags.
  */
-function runPytest(repo: string): RunResult | null {
+async function runPytest(repo: string): Promise<RunResult | null> {
   const start = performance.now();
-  const r = safeExec("pytest", ["-q", "--tb=no"], repo, 180000);
+  const r = await safeExecAsync("pytest", ["-q", "--tb=no"], repo, 180000);
   const durationMs = Math.round(performance.now() - start);
   const passed = Number((r.stdout.match(/(\d+)\s+passed/) ?? [])[1] ?? 0);
   const failed = Number((r.stdout.match(/(\d+)\s+failed/) ?? [])[1] ?? 0);
