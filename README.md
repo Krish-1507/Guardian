@@ -42,8 +42,19 @@ Guardian modes:
 Reply with a mode, or just hit enter for the default full loop.
 ```
 
-Hit enter for the default loop, or jump straight into a mode: `/guardian --scan-only`,
-`/guardian --demo`, `/guardian --ledger`, `/guardian --integrity-only`.
+Hit enter for the default loop, or jump straight into a mode:
+
+| Invocation | Mode | What it does |
+|---|---|---|
+| `/guardian` (bare) | menu | Prints the mode menu above and **waits**. Reply with a mode, or hit enter for the default full loop. |
+| `/guardian --scan-only` | scan-only | Runs `cli-guardian scan`, prints the entire boxed report verbatim, and stops — no fixes, no commentary. |
+| `/guardian --demo` | demo | Scaffolds Guardian's seeded broken demo repo into a temp dir, then runs the default full loop there. |
+| `/guardian --ledger` | ledger | Runs `cli-guardian scan --ledger` (boots the app with every outbound HTTP call intercepted and replays duplicate-webhook / double-submit / retry traffic), then runs the loop restricted to the payment findings. |
+| `/guardian --integrity-only` | integrity-only | Runs `cli-guardian integrity`, prints the boxed verdict verbatim, and stops — no scanning, no fixes. |
+
+A flag after `/guardian` skips the menu and goes straight into that mode. If a tool ever
+fails to substitute arguments into the prompt, Guardian falls back to the menu rather than
+guessing.
 
 No repo handy? `npx cli-guardian@latest demo` scaffolds a broken demo repo in a temp dir so
 you can watch the whole loop.
