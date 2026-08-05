@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.1] - 2026-08-05
+
+### Fixed
+
+- **CI was red on `master` (all jobs): `TypeError: TEXT_ENCODINGS.union is not a function`.**
+  The CLI depends on execa 10, which requires Node ≥ 22 (`Set.prototype.union`, ES2024);
+  both workflows pinned Node 20, where that method does not exist. CI (`ci.yml`, `guardian.yml`)
+  now uses Node 22 and the `package.json` engines field is corrected from `>=18` to `>=22`
+  (the published `0.3.0` engines metadata was misleading). The smoke test (`node dist/cli.js
+  scan demo-repo`) was verified green locally on Node 22 — same version CI now uses.
+
 ## [0.3.0] - 2026-08-05
 
 **Published to npm as `cli-guardian@0.3.0`.**

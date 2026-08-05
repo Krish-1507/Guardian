@@ -420,6 +420,9 @@ The loop runs under hard safety rules baked into the prompt template:
 
 ## Development
 
+Requires **Node.js ≥ 22** (the CLI depends on execa 10, which uses ES2024 `Set.union` — not
+available on older runtimes). CI builds and smokes on Node 22 across Ubuntu and Windows.
+
 ```bash
 npm install
 npm run build      # tsc → dist/

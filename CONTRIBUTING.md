@@ -6,6 +6,8 @@ but it also covers setup, conventions, and how to open a PR.
 
 ## Development setup
 
+Requires **Node.js ≥ 22** (execa 10 needs `Set.union`, an ES2024 feature). CI uses Node 22.
+
 ```bash
 npm install
 npm run build      # tsc → dist/  (the CLI runs from dist/, not src/)
