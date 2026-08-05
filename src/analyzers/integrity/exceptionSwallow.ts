@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execaSync } from "execa";
 import { parse } from "@babel/parser";
 import type { FileChange, IntegrityFinding } from "./types.js";
 
@@ -155,12 +155,14 @@ function detectPython(change: FileChange): IntegrityFinding[] {
   const out: IntegrityFinding[] = [];
   if (!change.after) return out;
   try {
-    const res = execFileSync("python", ["-c", PY_SCRIPT], {
+    const res = execaSync("python", ["-c", PY_SCRIPT], {
       input: change.after,
       encoding: "utf8",
       windowsHide: true,
+      reject: false,
+      timeout: 15000,
     });
-    const hits: { line: number; reason: string }[] = JSON.parse(res);
+    const hits: { line: number; reason: string }[] = JSON.parse(res.stdout);
     for (const h of hits) {
       if (isNewlyAdded(change, h.line)) {
         out.push({

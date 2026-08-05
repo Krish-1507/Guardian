@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { commandExists, detectLanguage, safeExec, safeExecShell } from "./util.js";
+import { commandExists, detectLanguage, safeExec } from "./util.js";
 import type { ScanIssue, SecurityResult } from "./types.js";
 
 export function analyzeSecurity(repo: string): SecurityResult {
@@ -8,17 +8,14 @@ export function analyzeSecurity(repo: string): SecurityResult {
   const issues: ScanIssue[] = [];
 
   if (lang === "js") {
-    // npm audit's --json output isn't reliably captured over a pipe on every
-    // platform, so redirect to a file and read it back.
+    // npm audit exits 1 when vulnerabilities exist but still prints the full
+    // JSON — capture stdout and persist it for parsing either way.
     const auditFile = path.join(repo, ".guardian", "npm-audit.json");
     fs.mkdirSync(path.dirname(auditFile), { recursive: true });
-    safeExecShell(`npm audit --json > "${auditFile}"`, repo, 120000);
-    if (fs.existsSync(auditFile)) {
-      try {
-        issues.push(...parseNpmAudit(fs.readFileSync(auditFile, "utf8")));
-      } catch {
-        /* ignore */
-      }
+    const r = safeExec("npm", ["audit", "--json"], repo, 120000);
+    if (r.stdout) {
+      fs.writeFileSync(auditFile, r.stdout);
+      issues.push(...parseNpmAudit(r.stdout));
     }
   } else if (lang === "python") {
     if (commandExists("pip-audit")) {

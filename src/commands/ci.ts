@@ -5,7 +5,7 @@ import os from "node:os";
 import { runAllAnalyzers } from "../analyzers/index.js";
 import { correlate } from "../graph/correlate.js";
 import { runScan } from "./scan.js";
-import { safeExec, safeExecShell } from "../analyzers/util.js";
+import { safeExec } from "../analyzers/util.js";
 import {
   buildModel,
   renderMarkdown,
@@ -13,8 +13,6 @@ import {
 } from "../report/format.js";
 import { classifyRisk, deltasOf, metricsOf } from "../verify/metrics.js";
 import type { ScanResult } from "../analyzers/types.js";
-
-const quote = (p: string): string => `"${p.replace(/"/g, '\\"')}"`;
 
 /**
  * `guardian ci` — CI-mode, diagnostic-only analysis.
@@ -129,9 +127,12 @@ function analyzeDir(dir: string): ScanResult {
 }
 
 /**
- * Fetch a clean read-only snapshot of the base branch into a temp dir via
- * `git archive` (never touches the working tree, never creates branches).
- * Returns null on any failure so CI degrades to a scan-only report.
+ * Fetch a clean read-only snapshot of the base branch into a temp dir using
+ * only `git` (never touches the working tree, never creates branches, and no
+ * shell pipeline — `tar` is not guaranteed on Windows). The base commit is
+ * fetched into a fresh repo from the already-fetched local clone, so no
+ * network round trip is needed. Returns null on any failure so CI degrades to
+ * a scan-only report.
  */
 function fetchBaseSnapshot(repo: string, baseRef: string): string | null {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "guardian-ci-base-"));
@@ -148,15 +149,20 @@ function fetchBaseSnapshot(repo: string, baseRef: string): string | null {
     console.error(`[guardian ci] could not resolve origin/${baseRef}`);
     return null;
   }
-  const tar = safeExecShell(
-    `git -C ${quote(repo)} archive ${commit} | tar -x -C ${quote(tmp)}`,
-    repo,
-    180000,
-  );
-  if (tar.code !== 0) {
+  const init = safeExec("git", ["init", "-q"], tmp, 30000);
+  if (init.code !== 0) return null;
+  // Fetch the exact base commit from the local repo (local transport can fetch
+  // an arbitrary object id), then check it out detached — a pure-git snapshot.
+  const pull = safeExec("git", ["fetch", "--depth=1", repo, commit], tmp, 180000);
+  if (pull.code !== 0) {
     console.error(
-      `[guardian ci] could not extract base snapshot: ${tar.stderr.trim() || tar.stdout.trim()}`,
+      `[guardian ci] could not extract base snapshot: ${pull.stderr.trim() || pull.stdout.trim()}`,
     );
+    return null;
+  }
+  const co = safeExec("git", ["checkout", "-q", "FETCH_HEAD"], tmp, 60000);
+  if (co.code !== 0) {
+    console.error(`[guardian ci] could not check out base snapshot: ${co.stderr.trim()}`);
     return null;
   }
   return tmp;

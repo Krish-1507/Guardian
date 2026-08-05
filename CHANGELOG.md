@@ -33,3 +33,44 @@ All notable changes to this project are documented here.
   even though the exploit/assertions never ran. The runner now passes a repo-relative path to jest/vitest
   (node-test/pytest continue to use the absolute path). Re-verified on two finding types (ledger, security):
   the generated tests now genuinely FAIL with the bug present and genuinely PASS after the fix.
+
+## [0.2.0] - 2026-08-05
+
+### Added
+
+- **New integrity detector `assertionLiteralTamper` (pattern `assertion-expected-value-changed`, confidence
+  `confirmed`).** Flags commits whose *entire* diff is a swapped literal RHS on a test assertion — same
+  subject, same surviving suffix, changed expected value (JS `toBe|toEqual|toStrictEqual|toBeCloseTo|toMatch|toMatchObject`,
+  Python `assertEqual`/`assertTrue`/`assertFalse`/`assert … ==|!=|<|>`, string-aware mid-line parsing, CRLF-safe).
+  Any accompanying app change, added/deleted file, comment, or non-swap line suppresses all findings (an honest
+  spec update is indistinguishable from a cheat). Covered by `fixtures/assertion-literal-tamper/` (baseline /
+  cheat / honest + `verify.mjs`).
+
+- **`windows-latest` CI job.** `.github/workflows/ci.yml` now runs build + smoke (`node dist/cli.js scan
+  demo-repo`) on both `ubuntu-latest` and `windows-latest` via a matrix.
+
+### Changed
+
+- **All tool spawning migrated from `child_process` shell strings to `execa` (v10).** `src/analyzers/util.ts`
+  now implements `safeExec`/`commandExists` via `execaSync` and the `safeExecShell` helper was removed; every
+  shell-style invocation was replaced with argv-based ones: `npm install`/`npm run build`/`npm audit --json`
+  (stdout captured directly instead of a shell redirect to a temp file), the per-file Python interpreter
+  (`python -c …` with stdin), and the async repro runner in `src/repro/framework.ts`. This removes the last
+  places that assumed a POSIX shell (`/dev/null`, `&&`, glob/pipe semantics) on any platform.
+
+- **`src/commands/ci.ts` snapshot now pure-git.** The unix-only `git archive | tar` pipeline was replaced with
+  `fetchBaseSnapshot()`: it fetches the base SHA into a temp repo (`git fetch --depth=1 <repo> <sha>`) and
+  detached-checkouts `FETCH_HEAD`, so `guardian ci` works on Windows without a `tar` unpacker.
+
+- **CRLF normalization in `src/analyzers/integrity/git.ts`.** Blob/working-tree contents read for `integrity`
+  diffing are normalized to `\n` before parsing, so an uncommitted CRLF working-tree edit no longer mangles
+  per-line diffs.
+
+### Verified (on real Windows, this session)
+
+Both previously documented bugs were re-run on a real Windows host (Node 22, PowerShell, git for Windows,
+`%TEMP%` on an 8.3 short path) and are fixed: the npx `node_modules/.bin` jest shim now fails loudly with the
+true `2 failed / 2` suite instead of `jest produced no JSON`, and a `guardian repro` in an 8.3-path temp repo
+genuinely `FAIL — bug reproduced` before the fix and `PASS — bug not reproduced` after. The full
+`guardian demo → /guardian` loop, `guardian ci` (base-branch snapshot report), and a `guardian/*` branch
+round-trip were also exercised on Windows.

@@ -5,6 +5,7 @@ import { detectSuppressionCreep } from "./suppressionCreep.js";
 import { detectHardcodedMatch } from "./hardcodedMatch.js";
 import { detectMockOverreach } from "./mockOverreach.js";
 import { detectExitCheat } from "./exitCheat.js";
+import { detectAssertionLiteralTamper } from "./assertionLiteralTamper.js";
 
 export { detectTestTamper } from "./testTamper.js";
 export { detectExceptionSwallow } from "./exceptionSwallow.js";
@@ -12,6 +13,7 @@ export { detectSuppressionCreep } from "./suppressionCreep.js";
 export { detectHardcodedMatch } from "./hardcodedMatch.js";
 export { detectMockOverreach } from "./mockOverreach.js";
 export { detectExitCheat } from "./exitCheat.js";
+export { detectAssertionLiteralTamper } from "./assertionLiteralTamper.js";
 
 /** Run every detector against the diff. Order is stable for reporting. */
 export function runDetectors(changes: FileChange[]): IntegrityFinding[] {
@@ -22,5 +24,6 @@ export function runDetectors(changes: FileChange[]): IntegrityFinding[] {
     ...detectHardcodedMatch(changes),
     ...detectMockOverreach(changes),
     ...detectExitCheat(changes),
+    ...detectAssertionLiteralTamper(changes),
   ];
 }

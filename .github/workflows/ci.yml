@@ -7,7 +7,11 @@ on:
 
 jobs:
   build-and-smoke:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -25,5 +29,8 @@ jobs:
       - name: Build
         run: npm run build
 
+      # The smoke test is the regression guard for the Windows bugs fixed in
+      # 0.1.0/0.1.1: execa-based tool spawning (npm.cmd/.cmd shim resolution)
+      # and repo-relative test paths (8.3 short-path jest rootDir mismatch).
       - name: Smoke test (scan demo-repo)
         run: node dist/cli.js scan demo-repo

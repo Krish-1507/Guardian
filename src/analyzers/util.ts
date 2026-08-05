@@ -1,12 +1,19 @@
-import { execFileSync, execSync } from "node:child_process";
+import { execaSync, type SyncResult } from "execa";
 import fs from "node:fs";
 import path from "node:path";
 
 export type Language = "js" | "python" | "unknown";
 
+/**
+ * All external tool invocation goes through execa, which resolves PATH /
+ * PATHEXT (`.cmd` / `.exe` shims) correctly on Windows — the raw
+ * node:child_process execFile cannot spawn npm-installed `.cmd` shims there.
+ * `reject: false` + try/catch makes these wrappers never throw.
+ */
+
 export function commandExists(cmd: string): boolean {
   try {
-    execFileSync(process.platform === "win32" ? "where" : "which", [cmd], {
+    execaSync(process.platform === "win32" ? "where" : "which", [cmd], {
       stdio: "ignore",
       windowsHide: true,
     });
@@ -22,51 +29,34 @@ export function safeExec(
   cwd: string,
   timeoutMs = 120000,
 ): { code: number; stdout: string; stderr: string } {
+  const asStr = (v: unknown): string => (typeof v === "string" ? v : v instanceof Buffer ? v.toString() : "");
+  let res: SyncResult;
   try {
-    const stdout = execFileSync(file, args, {
+    res = execaSync(file, args, {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: timeoutMs,
       windowsHide: true,
       maxBuffer: 50 * 1024 * 1024,
+      reject: false,
     });
-    return { code: 0, stdout, stderr: "" };
   } catch (err: any) {
-    return {
-      code: typeof err.status === "number" ? err.status : -1,
-      stdout: err.stdout?.toString() ?? "",
-      stderr: err.stderr?.toString() ?? "",
-    };
+    return { code: -1, stdout: "", stderr: err?.message ?? String(err) };
   }
+  return {
+    code: typeof res.exitCode === "number" ? res.exitCode : res.failed ? 1 : -1,
+    stdout: asStr(res.stdout),
+    stderr: asStr(res.stderr),
+  };
 }
 
-/**
- * Run a shell command (needed for shell redirection, e.g. `npm audit --json >
- * file`, which pipe-capture fails to retrieve on some platforms).
- */
-export function safeExecShell(
-  command: string,
-  cwd: string,
-  timeoutMs = 120000,
-): { code: number; stdout: string; stderr: string } {
-  try {
-    const stdout = execSync(command, {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: timeoutMs,
-      windowsHide: true,
-      maxBuffer: 50 * 1024 * 1024,
-    });
-    return { code: 0, stdout, stderr: "" };
-  } catch (err: any) {
-    return {
-      code: typeof err.status === "number" ? err.status : -1,
-      stdout: err.stdout?.toString() ?? "",
-      stderr: err.stderr?.toString() ?? "",
-    };
-  }
+/** 1-based line number of a character index in a string. */
+export function lineOf(content: string, index: number): number {
+  let line = 1;
+  const end = Math.min(index, content.length);
+  for (let i = 0; i < end; i++) if (content[i] === "\n") line++;
+  return line;
 }
 
 export function detectLanguage(repo: string): Language {
@@ -117,14 +107,6 @@ export function walkFiles(root: string, exts: string[]): string[] {
     }
   }
   return out;
-}
-
-/** 1-based line number of a character index in a string. */
-export function lineOf(content: string, index: number): number {
-  let line = 1;
-  const end = Math.min(index, content.length);
-  for (let i = 0; i < end; i++) if (content[i] === "\n") line++;
-  return line;
 }
 
 export function dirSize(root: string): number {
