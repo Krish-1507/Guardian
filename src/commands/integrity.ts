@@ -5,6 +5,7 @@ import chalk from "chalk";
 import boxen from "boxen";
 import { getDiff, resolveRefs } from "../analyzers/integrity/git.js";
 import { buildIntegrityReport } from "../graph/integrity.js";
+import { seal } from "../evidence.js";
 import type { IntegrityFinding, Verdict } from "../analyzers/integrity/types.js";
 
 export const integrity = new Command("integrity")
@@ -29,7 +30,10 @@ export const integrity = new Command("integrity")
     fs.mkdirSync(outDir, { recursive: true });
     const ts = report.timestamp.replace(/[:.]/g, "-");
     const outPath = path.join(outDir, `integrity-${ts}.json`);
-    fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
+    fs.writeFileSync(
+      outPath,
+      JSON.stringify(seal(report, `guardian integrity report for ${repo}`), null, 2),
+    );
 
     printReport(report, outPath);
     process.exitCode = verdictExit(report.verdict);

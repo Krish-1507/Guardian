@@ -205,6 +205,8 @@ export interface Cluster {
 export interface ScanResult {
   timestamp: string;
   repo: string;
+  /** `try` was produced by the quick `guardian try` pass (tests/perf/reliability intentionally skipped). */
+  mode?: "full" | "try";
   language: "js" | "python" | "unknown";
   dependencyGraph: DependencyGraphResult;
   security: SecurityResult;

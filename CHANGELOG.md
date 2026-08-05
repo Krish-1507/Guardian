@@ -2,6 +2,44 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.0] - 2026-08-05
+
+### Added
+
+- **`guardian try` — the 2-second wow, on any repo.** Static-analyze an existing
+  project with zero setup (no install, no tool config, no curated fixture) and
+  get its Guardian Score in ~1–2s. Runs the cheap analyzers (dependency graph,
+  npm audit with its cache, duplication, accessibility, DevEx) and honestly
+  notes that tests/build/flaky are a `guardian scan` detail. The result is
+  persisted as a sealed baseline, so verify/gate pick up where it left off.
+- **`guardian gate [--score 60]` — the agentless commit gate.** One command
+  answers "is this safe to commit?" with a plain exit code, no AI tool needed:
+  checks the score against a threshold, the regression risk, the integrity diff
+  since HEAD, and the baseline evidence signature. `0` = PASS (safe to commit),
+  `1` = FAIL (skip the commit), `2` = CONFIRMED_CHEAT (block hard). `--json`
+  emits a machine-readable verdict for CI. Drop it in as a pre-commit hook or
+  the last line of a CI job.
+- **Tamper-evident evidence chain.** Every scan, verify and integrity document
+  Guardian writes is sealed with a `sha256` digest computed over its own
+  canonical content (`guardian-sha256-canonical-v1`, deterministic key-sorted
+  JSON). Editing the JSON after the fact — inflating a score, deleting a
+  finding — breaks the digest. `guardian verify` and `gate` recompute it on
+  read: baselines that carried a pre-0.6.0 unsigned write are reported as
+  "untracked", ones with a broken digest are flagged `TAMPERED` (and block the
+  gate). Verify reports carry their own signature too.
+
+### Changed
+
+- **`guardian verify` shows the evidence line.** The box now prints
+  `evidence: ✓ signed <digest>` / `✗ TAMPERED`, and the verify JSON records the
+  check result.
+- **Duplicate-function detector is ~12× faster.** The devex clone pass no
+  longer re-tokenizes every function body for every pair; bodies and bigram
+  counts are computed once and pairs are pre-filtered by length balance. Scan
+  of Guardian's own repo: devex 5.7s → 0.5s, `guardian try` 11s → 1.7s.
+- **UTF-8 BOM tolerance.** `.guardian/*.json` documents written by PowerShell
+  or editors with a BOM (which `JSON.parse` rejects) are now read correctly.
+
 ## [0.5.0] - 2026-08-05
 
 ### Changed

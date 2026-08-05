@@ -44,10 +44,11 @@ export function analyzeDevex(repo: string): DevexResult {
   }
 
   // --- duplicated-utility-function detector (always runs on JS/TS) ---
-  const duplicateFunctions = findDuplicateFunctions(repo);
+  const files = walkFiles(repo, JS_EXTS);
+  const duplicateFunctions = findDuplicateFunctions(repo, files);
 
   // Nothing to analyze: not a JS/TS repo.
-  if (walkFiles(repo, JS_EXTS).length === 0) {
+  if (files.length === 0) {
     return {
       status: "skipped",
       note: "no JS/TS files found",
@@ -88,11 +89,9 @@ interface FuncDef {
   lines: number;
 }
 
-function findDuplicateFunctions(repo: string): DuplicateFunction[] {
+function findDuplicateFunctions(repo: string, files: string[]): DuplicateFunction[] {
   const defs: FuncDef[] = [];
-  const JS_TYPES = new Set([".js", ".jsx", ".ts", ".tsx"].map((e) => e));
-  for (const f of walkFiles(repo, JS_EXTS)) {
-    if (!JS_TYPES.has(path.extname(f))) continue;
+  for (const f of files) {
     let content: string;
     try {
       content = fs.readFileSync(f, "utf8");
@@ -102,17 +101,29 @@ function findDuplicateFunctions(repo: string): DuplicateFunction[] {
     defs.push(...extractFunctions(f, content));
   }
 
+  // Tokenize every body exactly once (this is the cost of the detector) and
+  // precompute its bigram map, so the pair loop is pure set comparison.
+  const tokens = defs.map((d) => tokenize(d.body));
+  const length = tokens.map((t) => t.length);
+  const bigrams = tokens.map(bigramCounts);
+
   const scored: { a: FuncDef; b: FuncDef; similarity: number; tokens: number }[] = [];
   for (let i = 0; i < defs.length; i++) {
+    const la = length[i];
+    if (la < MIN_TOKENS) continue;
     for (let j = i + 1; j < defs.length; j++) {
-      const a = defs[i];
-      const b = defs[j];
-      if (a.file === b.file) continue; // only cross-file duplication
-      const ta = tokenize(a.body);
-      const tb = tokenize(b.body);
-      if (ta.length < MIN_TOKENS || tb.length < MIN_TOKENS) continue;
-      const sim = dice(ta, tb);
-      if (sim >= SIM_THRESHOLD) scored.push({ a, b, similarity: sim, tokens: Math.min(ta.length, tb.length) });
+      if (defs[i].file === defs[j].file) continue; // only cross-file duplication
+      const lb = length[j];
+      if (lb < MIN_TOKENS) continue;
+      // Dice similarity can only reach the 0.85 threshold when the two bodies
+      // are close in size — skip badly unbalanced pairs without touching the maps.
+      const min = Math.min(la, lb);
+      const max = Math.max(la, lb);
+      if (min / max < 0.43) continue;
+      const sim = diceFrom(bigrams[i], bigrams[j], la, lb);
+      if (sim >= SIM_THRESHOLD) {
+        scored.push({ a: defs[i], b: defs[j], similarity: sim, tokens: Math.min(la, lb) });
+      }
     }
   }
 
@@ -269,22 +280,28 @@ function tokenize(body: string): string[] {
   return tokens;
 }
 
-function dice(a: string[], b: string[]): number {
-  if (a.length < 2 || b.length < 2) return 0;
-  const bigrams = (arr: string[]): Map<string, number> => {
-    const m = new Map<string, number>();
-    for (let i = 0; i < arr.length - 1; i++) {
-      const k = arr[i] + "\u0000" + arr[i + 1];
-      m.set(k, (m.get(k) ?? 0) + 1);
-    }
-    return m;
-  };
-  const ma = bigrams(a);
-  const mb = bigrams(b);
+function bigramCounts(arr: string[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (let i = 0; i < arr.length - 1; i++) {
+    const k = arr[i] + "\u0000" + arr[i + 1];
+    m.set(k, (m.get(k) ?? 0) + 1);
+  }
+  return m;
+}
+
+/** Dice coefficient from precomputed bigram counts; la/lb are token counts. */
+function diceFrom(
+  ma: Map<string, number>,
+  mb: Map<string, number>,
+  la: number,
+  lb: number,
+): number {
   let inter = 0;
-  for (const [k, n] of ma) {
-    const bn = mb.get(k);
+  const smaller = ma.size <= mb.size ? ma : mb;
+  const other = smaller === ma ? mb : ma;
+  for (const [k, n] of smaller) {
+    const bn = other.get(k);
     if (bn != null) inter += Math.min(n, bn);
   }
-  return (2 * inter) / (a.length - 1 + b.length - 1);
+  return (2 * inter) / (la - 1 + lb - 1);
 }

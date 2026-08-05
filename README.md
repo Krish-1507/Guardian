@@ -104,6 +104,8 @@ fix loop never re-hit the registry.
 | `guardian report --html` | Writes a single self-contained `GUARDIAN_REPORT.html` (inline SVG trend charts, integrity-gate timeline, zero external assets — send it to a stakeholder and it just works). Every `guardian report` also writes `GUARDIAN_BADGE.svg`, a README-ready shield: `![Guardian score](GUARDIAN_BADGE.svg)`. |
 | `guardian doctor` | Explains why categories are `skipped`: checks the toolchain (Node, git, jscpd, gitleaks, semgrep, pa11y) and prints copy-paste install hints. |
 | `guardian prompt [--args …]` | Prints the exact `/guardian` prompt your AI tool expands to, with your arguments substituted — full transparency into what the agent was told. |
+| `guardian try [path]` | Zero-setup 2-second Guardian Score on **any existing repo** — no install, no tool config; static pass only, and it saves a sealed baseline so scan/verify/gate build on it. |
+| `guardian gate [--score 60]` | Agentless commit gate for CI/pre-commit: score threshold + regression risk + integrity diff + evidence signature. Exit 0 = PASS, 1 = FAIL, 2 = CONFIRMED_CHEAT. |
 | `guardian scan --json` | Prints the raw scan result as JSON (pipeline-friendly; no banner/spinner pollution). |
 | `guardian verify` | Adds a **Guardian Score** row to the Δ table, so every fix iteration shows points moving, not just raw metrics. |
 
@@ -113,6 +115,15 @@ Skipped categories are excluded and weights renormalized, so a missing `jscpd` n
 silently tanks the number. The verify Δ compares the score against the last scan with the
 *exact same categories measured* — a skipped category stays skipped on both sides, so the
 score only moves when the code does.
+
+### Tamper-evident evidence
+
+Every scan, verify and integrity document Guardian writes is sealed with a `sha256` digest
+over its own canonical content (`guardian-sha256-canonical-v1`, deterministic key-sorted
+JSON). Edit the JSON after the fact — inflate a score, delete a finding — and
+`guardian verify`/`guardian gate` recompute the digest, detect the mismatch and report the
+chain as broken. Guardian can't be tricked into endorsing a baseline it didn't write; the
+`gate` exit code treats a broken chain as a hard fail.
 
 ### Prompt transparency
 

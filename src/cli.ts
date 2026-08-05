@@ -14,6 +14,8 @@ import { inspect } from "./commands/inspect.js";
 import { trends } from "./commands/trends.js";
 import { doctor } from "./commands/doctor.js";
 import { prompt } from "./commands/prompt.js";
+import { try_ } from "./commands/try.js";
+import { gate } from "./commands/gate.js";
 
 function readVersion(): string {
   try {
@@ -46,5 +48,7 @@ program.addCommand(inspect);
 program.addCommand(trends);
 program.addCommand(doctor);
 program.addCommand(prompt);
+program.addCommand(try_);
+program.addCommand(gate);
 
 program.parseAsync(process.argv);

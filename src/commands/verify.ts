@@ -17,11 +17,34 @@ import { computeScore, type ScoreResult } from "../report/score.js";
 import { getDiff } from "../analyzers/integrity/git.js";
 import { buildIntegrityReport } from "../graph/integrity.js";
 import type { IntegrityFinding, Verdict } from "../analyzers/integrity/types.js";
+import { seal, checkEvidence, type EvidenceCheck, type GuardianEvidence } from "../evidence.js";
 
 interface IntegrityGate {
   verdict: Verdict;
   findings: IntegrityFinding[];
   summary: { confirmed: number; suspicious: number; total: number };
+}
+
+type Risk = "Low" | "Medium" | "High";
+
+export interface VerifyOutcome {
+  repo: string;
+  missingBaseline: boolean;
+  baselineTimestamp?: string;
+  evidence?: EvidenceCheck;
+  stale: boolean;
+  staleNote?: string;
+  risk: Risk;
+  integrity: IntegrityGate;
+  blocked: boolean;
+  current: VerifyMetrics;
+  baseline: VerifyMetrics;
+  deltas: ReturnType<typeof deltasOf>;
+  baselineScore: ScoreResult;
+  currentScore: ScoreResult;
+  scoreDelta: number;
+  exitCode: number;
+  file?: string;
 }
 
 /**
@@ -36,11 +59,17 @@ function integrityGate(repo: string): IntegrityGate {
   return { verdict: report.verdict, findings: report.findings, summary: report.summary };
 }
 
-function readBaseline(repo: string): ScanResult | null {
+function readBaseline(repo: string): (ScanResult & { evidence?: GuardianEvidence }) | null {
   const p = path.join(repo, ".guardian", "scan-latest.json");
   if (!fs.existsSync(p)) return null;
   try {
-    return JSON.parse(fs.readFileSync(p, "utf8")) as ScanResult;
+    // PowerShell (and some editors) write UTF-8 JSON with a BOM; JSON.parse
+    // rejects it, so strip a leading U+FEFF before parsing.
+    const raw = fs.readFileSync(p, "utf8");
+    const clean = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
+    return JSON.parse(clean) as ScanResult & {
+      evidence?: GuardianEvidence;
+    };
   } catch {
     return null;
   }
@@ -115,6 +144,160 @@ function currentScoreOf(
   return computeScore(hybrid, { integrityPenalty });
 }
 
+/**
+ * The shared verify pipeline (also used by `guardian gate`): re-measure the
+ * fast metrics, diff against the scan baseline, run the integrity gate, check
+ * the baseline's evidence signature, and write a sealed verify report. Returns
+ * everything a renderer needs plus the exit code to propagate.
+ */
+export async function runVerify(repo: string): Promise<VerifyOutcome> {
+  const baselineResult = readBaseline(repo);
+  if (!baselineResult) {
+    return {
+      repo,
+      missingBaseline: true,
+      stale: false,
+      risk: "High",
+      integrity: {
+        verdict: "CLEAN",
+        findings: [],
+        summary: { confirmed: 0, suspicious: 0, total: 0 },
+      },
+      blocked: false,
+      current: {
+        tests: { total: 0, passed: 0, failed: 0, durationMs: 0 },
+        perf: {},
+        securityCount: 0,
+        duplicationCount: 0,
+      },
+      baseline: {
+        tests: { total: 0, passed: 0, failed: 0, durationMs: 0 },
+        perf: {},
+        securityCount: 0,
+        duplicationCount: 0,
+      },
+      deltas: {
+        passed: 0,
+        failed: 0,
+        durationMs: 0,
+        coverage: 0,
+        buildTimeMs: 0,
+        bundleSizeBytes: 0,
+        security: 0,
+        duplication: 0,
+      },
+      baselineScore: { score: 0, grade: "F", categories: [], analyzed: 0, total: 0 },
+      currentScore: { score: 0, grade: "F", categories: [], analyzed: 0, total: 0 },
+      scoreDelta: 0,
+      exitCode: 1,
+    };
+  }
+
+  // Evidence signature: recompute the digest of the stored scan and compare.
+  // A baseline edited after Guardian wrote it breaks the chain — the score
+  // delta is then computed against a document Guardian cannot vouch for.
+  const evidence = checkEvidence(baselineResult);
+
+  const baseline = metricsOf(baselineResult);
+  const current = await currentMetrics(repo);
+  const d = deltasOf(baseline, current);
+
+  // Baseline staleness: if files changed after the baseline scan, the delta
+  // and score are computed against a snapshot that no longer matches the
+  // working tree — warn loudly instead of silently presenting stale math.
+  let staleNote = "";
+  const newest = newestModifiedFile(repo);
+  const baselineAt = Date.parse(baselineResult.timestamp);
+  if (newest && baselineAt && newest.mtimeMs > baselineAt + 1000) {
+    const relFile = path.relative(repo, newest.file) || newest.file;
+    staleNote =
+      `baseline is STALE — ${relFile} changed ${new Date(newest.mtimeMs).toISOString()}, ` +
+      `after the baseline scan (${baselineResult.timestamp}). Score delta vs baseline is ` +
+      "approximate; re-run `guardian scan` for a fresh baseline.";
+  }
+  const stale = staleNote !== "";
+
+  const risk = classifyRisk(baseline, current, d);
+
+  // Integrity gate — runs automatically on every verify, gating the commit.
+  const integrity = integrityGate(repo);
+  const blocked =
+    integrity.verdict === "SUSPICIOUS" || integrity.verdict === "CONFIRMED_CHEAT";
+  const integrityPenalty = blocked
+    ? integrity.verdict === "CONFIRMED_CHEAT"
+      ? 25
+      : 10
+    : 0;
+
+  const baselineScore = computeScore(baselineResult);
+  const currentScore = currentScoreOf(
+    baselineResult,
+    current,
+    integrityPenalty,
+  );
+  const scoreDelta = currentScore.score - baselineScore.score;
+
+  const outDir = path.join(repo, ".guardian");
+  fs.mkdirSync(outDir, { recursive: true });
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const file = path.join(outDir, `verify-${ts}.json`);
+  const report = {
+    timestamp: new Date().toISOString(),
+    repo,
+    baselineTimestamp: baselineResult.timestamp,
+    risk,
+    blocked,
+    stale,
+    staleNote: stale ? staleNote : undefined,
+    evidence,
+    status: blocked ? "BLOCKED" : evidence.status === "tampered" ? "SUSPICIOUS_EVIDENCE" : "OK",
+    exitCode: blocked
+      ? integrity.verdict === "CONFIRMED_CHEAT"
+        ? 2
+        : 1
+      : risk === "High"
+        ? 1
+        : 0,
+    integrity,
+    deltas: d,
+    baseline,
+    current,
+    score: {
+      baseline: baselineScore.score,
+      current: currentScore.score,
+      delta: scoreDelta,
+      grade: currentScore.grade,
+    },
+  };
+  fs.writeFileSync(file, JSON.stringify(seal(report, `guardian verify result for ${repo}`), null, 2));
+
+  return {
+    repo,
+    missingBaseline: false,
+    baselineTimestamp: baselineResult.timestamp,
+    evidence,
+    stale,
+    staleNote: stale ? staleNote : undefined,
+    risk,
+    integrity,
+    blocked,
+    current,
+    baseline,
+    deltas: d,
+    baselineScore,
+    currentScore,
+    scoreDelta,
+    exitCode: blocked
+      ? integrity.verdict === "CONFIRMED_CHEAT"
+        ? 2
+        : 1
+      : risk === "High"
+        ? 1
+        : 0,
+    file,
+  };
+}
+
 function fmtBundle(b?: number): string {
   return b == null ? "—" : `${(b / 1024).toFixed(1)} KB`;
 }
@@ -140,6 +323,147 @@ function deltaPct(n: number): string {
   return `${n > 0 ? "+" : ""}${n.toFixed(1)}%`;
 }
 
+function evidenceLine(ev: EvidenceCheck | undefined): string {
+  if (!ev || ev.status === "missing") {
+    return chalk.dim(`evidence: untracked (baseline carries no Guardian signature)`);
+  }
+  if (ev.status === "verified") {
+    return chalk.green(`evidence: ✓ signed ${ev.digest.slice(0, 12)}…`);
+  }
+  return chalk.red(
+    `evidence: ✗ TAMPERED — ${ev.reason ?? "digest mismatch"} ` +
+      `(expected ${ev.expected?.slice(0, 12)}…, got ${ev.digest.slice(0, 12)}…)`,
+  );
+}
+
+function renderVerifyBox(o: VerifyOutcome): { text: string; color: string } {
+  const d = o.deltas;
+  const baseline = o.baseline;
+  const current = o.current;
+  const baselineScore = o.baselineScore;
+  const currentScore = o.currentScore;
+
+  const table = new Table({
+    head: ["Metric", "Baseline", "Current", "Δ"],
+    style: { head: ["cyan"], border: [] },
+  });
+
+  const row = (
+    name: string,
+    baseStr: string,
+    curStr: string,
+    deltaNum: number,
+    deltaStr: string,
+    higherIsBetter: boolean,
+  ) => {
+    const col =
+      deltaNum === 0
+        ? chalk.dim
+        : (higherIsBetter ? deltaNum > 0 : deltaNum < 0)
+          ? chalk.green
+          : chalk.red;
+    table.push([chalk.bold(name), baseStr, curStr, col(deltaStr)]);
+  };
+
+  row("Tests passed", String(baseline.tests.passed), String(current.tests.passed), d.passed, signed(d.passed), true);
+  row("Tests failed", String(baseline.tests.failed), String(current.tests.failed), d.failed, signed(d.failed), false);
+  row("Duration", fmtMs(baseline.tests.durationMs), fmtMs(current.tests.durationMs), d.durationMs, deltaMs(d.durationMs), false);
+  row(
+    "Coverage",
+    fmtPct(baseline.tests.coverage),
+    fmtPct(current.tests.coverage),
+    d.coverage,
+    deltaPct(d.coverage),
+    true,
+  );
+  row(
+    "Build time",
+    fmtMs(baseline.perf.buildTimeMs),
+    fmtMs(current.perf.buildTimeMs),
+    d.buildTimeMs,
+    deltaMs(d.buildTimeMs),
+    false,
+  );
+  row(
+    "Bundle size",
+    fmtBundle(baseline.perf.bundleSizeBytes),
+    fmtBundle(current.perf.bundleSizeBytes),
+    d.bundleSizeBytes,
+    deltaBytes(d.bundleSizeBytes),
+    false,
+  );
+  row("Security findings", String(baseline.securityCount), String(current.securityCount), d.security, signed(d.security), false);
+  row(
+    "Duplication clones",
+    String(baseline.duplicationCount),
+    String(current.duplicationCount),
+    d.duplication,
+    signed(d.duplication),
+    false,
+  );
+  row(
+    "Guardian score",
+    `${baselineScore.score}/100 (${baselineScore.grade})`,
+    `${currentScore.score}/100 (${currentScore.grade})`,
+    o.scoreDelta,
+    o.scoreDelta > 0 ? `+${o.scoreDelta} pts` : `${o.scoreDelta} pts`,
+    true,
+  );
+
+  const riskColor = o.risk === "High" ? chalk.red : o.risk === "Medium" ? chalk.yellow : chalk.green;
+  let riskLine: string;
+  if (o.blocked) {
+    riskLine = `${chalk.bold("Regression risk:")} ${chalk.red("BLOCKED — integrity violation")} (${o.integrity.verdict})`;
+  } else {
+    riskLine = `${chalk.bold("Regression risk:")} ${riskColor(o.risk.toUpperCase())}`;
+  }
+
+  const integrityParts: string[] = [];
+  if (o.blocked) {
+    integrityParts.push(
+      chalk.red(
+        `${chalk.bold("Integrity gate:")} ${o.integrity.verdict} — ` +
+          `${o.integrity.summary.confirmed} confirmed · ${o.integrity.summary.suspicious} suspicious`,
+      ),
+    );
+    for (const f of o.integrity.findings) {
+      const tag =
+        f.confidence === "confirmed" ? chalk.red("CONFIRMED") : chalk.yellow("SUSPICIOUS");
+      const loc = f.line ? `${f.file}:${f.line}` : f.file;
+      integrityParts.push(
+        `  ${tag} ${chalk.bold(f.detector)} / ${f.pattern} @ ${chalk.cyan(loc)}`,
+        `    ${f.evidence}`,
+      );
+    }
+  }
+
+  const contentParts: string[] = [];
+  if (o.stale) {
+    contentParts.push(chalk.yellow(`⚠ ${o.staleNote}`));
+  }
+  contentParts.push(evidenceLine(o.evidence));
+
+  if (o.evidence && o.evidence.status === "tampered") {
+    contentParts.push(
+      chalk.red(
+        `${chalk.bold("Evidence gate:")} the baseline was edited after Guardian signed it — ` +
+          "score delta is against an untrustworthy snapshot. Re-run `guardian scan`.",
+      ),
+    );
+  }
+
+  if (o.stale) contentParts.push("");
+  contentParts.push(...integrityParts, riskLine);
+  contentParts.push("", table.toString());
+  const content = contentParts.join("\n");
+
+  const color = o.blocked ? "red" : o.risk === "High" ? "red" : o.risk === "Medium" ? "yellow" : "green";
+  return {
+    text: content,
+    color,
+  };
+}
+
 export const verify = new Command("verify")
   .description(
     "Re-run tests/perf, diff against the last scan baseline, AND gate on the integrity diff since HEAD — " +
@@ -150,212 +474,38 @@ export const verify = new Command("verify")
     const repo = path.resolve(repoArg);
     console.log(chalk.cyan(`\nVerifying ${repo} ...\n`));
 
-    const baselineResult = readBaseline(repo);
-    if (!baselineResult) {
+    const outcome = await runVerify(repo);
+
+    if (outcome.missingBaseline) {
       console.log(
         chalk.red("no baseline found — run `guardian scan` first to create .guardian/scan-latest.json"),
       );
       process.exitCode = 1;
       return;
     }
-    const baseline = metricsOf(baselineResult);
-    const current = await currentMetrics(repo);
-    const d = deltasOf(baseline, current);
 
-    // Baseline staleness: if files changed after the baseline scan, the delta
-    // and score are computed against a snapshot that no longer matches the
-    // working tree — warn loudly instead of silently presenting stale math.
-    let staleNote = "";
-    const newest = newestModifiedFile(repo);
-    const baselineAt = Date.parse(baselineResult.timestamp);
-    if (newest && baselineAt && newest.mtimeMs > baselineAt + 1000) {
-      const relFile = path.relative(repo, newest.file) || newest.file;
-      staleNote =
-        `baseline is STALE — ${relFile} changed ${new Date(newest.mtimeMs).toISOString()}, ` +
-        `after the baseline scan (${baselineResult.timestamp}). Score delta vs baseline is ` +
-        "approximate; re-run `guardian scan` for a fresh baseline.";
-    }
-    const stale = staleNote !== "";
-
-    const risk = classifyRisk(baseline, current, d);
-
-    // Integrity gate — runs automatically on every verify, gating the commit.
-    const integrity = integrityGate(repo);
-    const blocked =
-      integrity.verdict === "SUSPICIOUS" || integrity.verdict === "CONFIRMED_CHEAT";
-    const integrityPenalty = blocked
-      ? integrity.verdict === "CONFIRMED_CHEAT"
-        ? 25
-        : 10
-      : 0;
-
-    const baselineScore = computeScore(baselineResult);
-    const currentScore = currentScoreOf(baselineResult, current, integrityPenalty);
-    const scoreDelta = currentScore.score - baselineScore.score;
-
-    const table = new Table({
-      head: ["Metric", "Baseline", "Current", "Δ"],
-      style: { head: ["cyan"], border: [] },
-    });
-
-    const row = (
-      name: string,
-      baseStr: string,
-      curStr: string,
-      deltaNum: number,
-      deltaStr: string,
-      higherIsBetter: boolean,
-    ) => {
-      const col =
-        deltaNum === 0
-          ? chalk.dim
-          : (higherIsBetter ? deltaNum > 0 : deltaNum < 0)
-            ? chalk.green
-            : chalk.red;
-      table.push([chalk.bold(name), baseStr, curStr, col(deltaStr)]);
-    };
-
-    row("Tests passed", String(baseline.tests.passed), String(current.tests.passed), d.passed, signed(d.passed), true);
-    row("Tests failed", String(baseline.tests.failed), String(current.tests.failed), d.failed, signed(d.failed), false);
-    row("Duration", fmtMs(baseline.tests.durationMs), fmtMs(current.tests.durationMs), d.durationMs, deltaMs(d.durationMs), false);
-    row(
-      "Coverage",
-      fmtPct(baseline.tests.coverage),
-      fmtPct(current.tests.coverage),
-      d.coverage,
-      deltaPct(d.coverage),
-      true,
-    );
-    row(
-      "Build time",
-      fmtMs(baseline.perf.buildTimeMs),
-      fmtMs(current.perf.buildTimeMs),
-      d.buildTimeMs,
-      deltaMs(d.buildTimeMs),
-      false,
-    );
-    row(
-      "Bundle size",
-      fmtBundle(baseline.perf.bundleSizeBytes),
-      fmtBundle(current.perf.bundleSizeBytes),
-      d.bundleSizeBytes,
-      deltaBytes(d.bundleSizeBytes),
-      false,
-    );
-    row("Security findings", String(baseline.securityCount), String(current.securityCount), d.security, signed(d.security), false);
-    row(
-      "Duplication clones",
-      String(baseline.duplicationCount),
-      String(current.duplicationCount),
-      d.duplication,
-      signed(d.duplication),
-      false,
-    );
-    row(
-      "Guardian score",
-      `${baselineScore.score}/100 (${baselineScore.grade})`,
-      `${currentScore.score}/100 (${currentScore.grade})`,
-      scoreDelta,
-      scoreDelta > 0 ? `+${scoreDelta} pts` : `${scoreDelta} pts`,
-      true,
-    );
-
-    const riskColor = risk === "High" ? chalk.red : risk === "Medium" ? chalk.yellow : chalk.green;
-    let riskLine: string;
-    if (blocked) {
-      riskLine = `${chalk.bold("Regression risk:")} ${chalk.red("BLOCKED — integrity violation")} (${integrity.verdict})`;
-    } else {
-      riskLine = `${chalk.bold("Regression risk:")} ${riskColor(risk.toUpperCase())}`;
-    }
-
-    const integrityParts: string[] = [];
-    if (blocked) {
-      integrityParts.push(
-        chalk.red(
-          `${chalk.bold("Integrity gate:")} ${integrity.verdict} — ` +
-            `${integrity.summary.confirmed} confirmed · ${integrity.summary.suspicious} suspicious`,
-        ),
-      );
-      for (const f of integrity.findings) {
-        const tag =
-          f.confidence === "confirmed" ? chalk.red("CONFIRMED") : chalk.yellow("SUSPICIOUS");
-        const loc = f.line ? `${f.file}:${f.line}` : f.file;
-        integrityParts.push(
-          `  ${tag} ${chalk.bold(f.detector)} / ${f.pattern} @ ${chalk.cyan(loc)}`,
-          `    ${f.evidence}`,
-        );
-      }
-    }
-
-    const contentParts: string[] = [];
-    if (stale) {
-      contentParts.push(chalk.yellow(`⚠ ${staleNote}`), "");
-    }
-    contentParts.push(...integrityParts, riskLine);
-    contentParts.push("", table.toString());
-    const content = contentParts.join("\n");
-
-    const boxColor = blocked ? "red" : risk === "High" ? "red" : risk === "Medium" ? "yellow" : "green";
+    const { text, color } = renderVerifyBox(outcome);
 
     console.log(
-      boxen(content, {
+      boxen(text, {
         title: " GUARDIAN — Verify ",
         titleAlignment: "center",
         borderStyle: "double",
         padding: 1,
-        borderColor: boxColor,
+        borderColor: color,
       }),
     );
 
-    const outDir = path.join(repo, ".guardian");
-    fs.mkdirSync(outDir, { recursive: true });
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const file = path.join(outDir, `verify-${ts}.json`);
-    const report = {
-      timestamp: new Date().toISOString(),
-      repo,
-      baselineTimestamp: baselineResult.timestamp,
-      risk,
-      blocked,
-      stale,
-      staleNote: stale ? staleNote : undefined,
-      status: blocked ? "BLOCKED" : "OK",
-      exitCode: blocked
-        ? integrity.verdict === "CONFIRMED_CHEAT"
-          ? 2
-          : 1
-        : risk === "High"
-          ? 1
-          : 0,
-      integrity,
-      deltas: d,
-      baseline,
-      current,
-      score: {
-        baseline: baselineScore.score,
-        current: currentScore.score,
-        delta: scoreDelta,
-        grade: currentScore.grade,
-      },
-    };
-    fs.writeFileSync(file, JSON.stringify(report, null, 2));
+    console.log(chalk.dim(`\nReport written to ${outcome.file}\n`));
 
-    const summary = blocked
-      ? `verify BLOCKED (integrity ${integrity.verdict})`
-      : `verify ${risk}: score ${currentScore.score}/100 (${currentScore.grade}) · tests ${signed(d.failed)} fail, bundle ${deltaBytes(d.bundleSizeBytes)}, security ${signed(d.security)}`;
+    const summary = outcome.blocked
+      ? `verify BLOCKED (integrity ${outcome.integrity.verdict})`
+      : `verify ${outcome.risk}: score ${outcome.currentScore.score}/100 (${outcome.currentScore.grade}) · tests ${signed(outcome.deltas.failed)} fail, bundle ${deltaBytes(outcome.deltas.bundleSizeBytes)}, security ${signed(outcome.deltas.security)}`;
     addEntry(repo, {
       type: "fix",
       summary,
-      context: `verify against baseline ${baselineResult.timestamp} — integrity ${integrity.verdict}`,
+      context: `verify against baseline ${outcome.baselineTimestamp} — integrity ${outcome.integrity.verdict}`,
     });
 
-    console.log(chalk.dim(`\nReport written to ${file}\n`));
-
-    process.exitCode = blocked
-      ? integrity.verdict === "CONFIRMED_CHEAT"
-        ? 2
-        : 1
-      : risk === "High"
-        ? 1
-        : 0;
+    process.exitCode = outcome.exitCode;
   });

@@ -10,6 +10,7 @@ import { relevantEntriesForFiles, type MemoryType } from "../memory/store.js";
 import { stampFindings, findingIdFor } from "../repro/ids.js";
 import { computeScore, type ScoreResult } from "../report/score.js";
 import { createSpinner } from "../ui/spinner.js";
+import { seal } from "../evidence.js";
 import type { ScanResult } from "../analyzers/types.js";
 
 function memTypeColor(t: MemoryType): (s: string) => string {
@@ -293,6 +294,24 @@ export interface RunScanOptions {
   reliabilityRuns?: number;
 }
 
+/**
+ * Persist a scan result into .guardian: the timestamped history file plus the
+ * live scan-latest.json, both sealed with the evidence signature (`guardian
+ * verify`/`gate` check it and flag any post-write editing as tampering).
+ */
+export function persistScan(repo: string, result: ScanResult): { file: string } {
+  const sealed = seal(result, `guardian scan result for ${repo}`);
+
+  const outDir = path.join(repo, ".guardian");
+  fs.mkdirSync(outDir, { recursive: true });
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const file = path.join(outDir, `scan-${ts}.json`);
+  const json = JSON.stringify(sealed, null, 2);
+  fs.writeFileSync(file, json);
+  fs.writeFileSync(path.join(outDir, "scan-latest.json"), json);
+  return { file };
+}
+
 export async function runScan(
   repo: string,
   opts: RunScanOptions = {},
@@ -311,12 +330,7 @@ export async function runScan(
   const { clusters } = correlate(repo, result);
   result.clusters = clusters;
 
-  const outDir = path.join(repo, ".guardian");
-  fs.mkdirSync(outDir, { recursive: true });
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const file = path.join(outDir, `scan-${ts}.json`);
-  fs.writeFileSync(file, JSON.stringify(result, null, 2));
-  fs.writeFileSync(path.join(outDir, "scan-latest.json"), JSON.stringify(result, null, 2));
+  const { file } = persistScan(repo, result);
   return { result, file };
 }
 
