@@ -26,7 +26,8 @@ src/analyzers/integrity/  diff-scoped AI-agent-cheat detectors (testTamper, exce
   suppressionCreep, hardcodedMatch, mockOverreach, exitCheat, assertionLiteralTamper) —
   wired into `guardian verify`
 src/installer/         slash-command install targets (Claude, Cursor, OpenCode, Antigravity,
-  Kilo Code, Codex) + the template transforms (skill / workflow frontmatter rewrites)
+  Kilo Code, Gemini CLI, Codex) + the template transforms (skill / workflow frontmatter
+  rewrites, gemini TOML conversion)
 src/graph/correlate.ts   flattens findings into ClusterFinding[] and clusters them
 src/graph/integrity.ts   combines detector output into one verdict (CLEAN/SUSPICIOUS/CONFIRMED_CHEAT)
 src/commands/         the CLI surface (scan, verify, integrity, report, memory, demo, ci, install)

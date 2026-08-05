@@ -16,6 +16,17 @@
 
 ## The one-liner
 
+One command installs it everywhere — project-level in the repo you're in, user-level so it
+works in any repo:
+
+```bash
+npx cli-guardian install
+```
+
+Re-run it after updates with `-y` to refresh without prompts:
+`npx cli-guardian install -y`. Then `/guardian` just works in Claude Code, Cursor, OpenCode,
+Antigravity, Kilo Code, Codex CLI, and Gemini CLI.
+
 Guardian is two pieces glued together: a **deterministic CLI** that scans your repo and
 produces numbers, and **your existing coding agent's reasoning** — the CLI does the
 measuring, your agent does the editing, and a prompt template makes them loop until the repo
@@ -67,10 +78,10 @@ npx cli-guardian demo
 ```
 
 That copies the demo into a temp dir, wires up `/guardian`, and prints where to open it.
-Open it in Claude Code / Cursor / OpenCode / Kilo Code / Antigravity / Codex CLI, type
-`/guardian`, hit enter, and watch the whole loop: scan box → confirm → fix → verify →
-re-scan → report. Type it bare and it asks which mode you want (`--scan-only`, `--demo`,
-`--ledger`, `--integrity-only`, or the full loop).
+Open it in Claude Code / Cursor / OpenCode / Kilo Code / Antigravity / Codex CLI / Gemini
+CLI, type `/guardian`, hit enter, and watch the whole loop: scan box → confirm → fix →
+verify → re-scan → report. Type it bare and it asks which mode you want (`--scan-only`,
+`--demo`, `--ledger`, `--integrity-only`, or the full loop).
 
 The demo source is at [`demo-repo/`](demo-repo/) if you want to read exactly what it plants
 in the code before you watch it get fixed.

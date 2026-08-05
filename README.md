@@ -52,7 +52,7 @@ Run it yourself in under two minutes:
 git clone https://github.com/Krish-1507/Guardian.git && cd Guardian
 npm install
 npx cli-guardian demo      # copies the intentionally-broken demo repo to a temp dir
-# open that repo in Claude Code / Cursor / OpenCode / Kilo Code / Antigravity / Codex CLI, then:
+# open that repo in Claude Code / Cursor / OpenCode / Kilo Code / Antigravity / Codex CLI / Gemini CLI, then:
 /guardian                  # a boxed scan summary appears...
 <Enter>                    # ...you confirm once, and watch it loop
 ```
@@ -82,9 +82,9 @@ Guardian is **two pieces glued together**:
 
 2. **Your existing coding agent's own reasoning.** Guardian never edits your code itself.
    The `/guardian` slash-command is a prompt template that drives *your* agent — Claude
-   Code, Cursor, OpenCode, Kilo Code, Antigravity, or Codex CLI — through a disciplined
-   loop: state a hypothesis, make the smallest fix, run `verify`, and re-scan. The agent
-   does the editing; Guardian does the measuring.
+   Code, Cursor, OpenCode, Kilo Code, Antigravity, Codex CLI, or Gemini CLI — through a
+   disciplined loop: state a hypothesis, make the smallest fix, run `verify`, and re-scan.
+   The agent does the editing; Guardian does the measuring.
 
 That division is the whole point: the engine guarantees the scan/verify numbers are
 deterministic and honest, while the agent's judgment decides what to change and how.
@@ -132,15 +132,26 @@ deterministic and honest, while the agent's judgment decides what to change and 
 
 ## Quick start
 
+One command. It installs into **every supported tool at once** — project-level for the repo
+you run it in, user-level so `/guardian` also works in any other repo on your machine:
+
 ```bash
 # 1. In the repo you want guarded
 cd your-repo
 
-# 2. Install the /guardian slash-command into your coding tool(s)
+# 2. One command — install /guardian into all your coding tools at once
 npx cli-guardian install
 
-# 3. Open the repo in your tool and type:
+# 3. Open the repo in any tool and type:
 /guardian
+```
+
+That's it. Claude Code, Cursor, OpenCode, Antigravity, Kilo Code, Codex CLI, and Gemini CLI
+all pick it up. New tools support `-y` for re-runnable, idempotent installs (e.g. after an
+update):
+
+```bash
+npx cli-guardian install -y    # overwrite with the latest template, safe to re-run
 ```
 
 Then: read the box, hit **enter**, watch it loop.
@@ -178,17 +189,22 @@ repo on your machine.
 | Cursor | user | `~/.cursor/commands/guardian.md` |
 | OpenCode | project | `.opencode/commands/guardian.md` |
 | OpenCode (legacy) | project | `.opencode/command/guardian.md` |
-| OpenCode | user | `~/.opencode/commands/guardian.md` |
+| OpenCode | user | `~/.config/opencode/commands/guardian.md` |
+| OpenCode (legacy) | user | `~/.opencode/commands/guardian.md` |
 | Antigravity | project | `.agent/workflows/guardian.md` |
 | Antigravity (plural variant) | project | `.agents/workflows/guardian.md` *(docs are inconsistent across versions — both are written, one is harmless)* |
+| Antigravity | user | `~/.agent/workflows/guardian.md` |
+| Antigravity (plural variant) | user | `~/.agents/workflows/guardian.md` |
 | Kilo Code | project | `.kilo/commands/guardian.md` |
 | Kilo Code (legacy) | project | `.kilocode/workflows/guardian.md` *(auto-migrated to `.kilo/commands/` by the new extension)* |
 | Kilo Code | user | `~/.config/kilo/commands/guardian.md` |
 | Kilo Code (legacy) | user | `~/.kilocode/workflows/guardian.md` |
+| Gemini CLI | project | `.gemini/commands/guardian.toml` *(TOML — `description` + `prompt`; the template is converted automatically)* |
+| Gemini CLI | user | `~/.gemini/commands/guardian.toml` |
 | Codex CLI | user | `~/.codex/prompts/guardian.md` *(Codex supports prompts at user level only)* |
 | Codex App / VS Code extension | — | **not supported** — no file is written; the install prints a manual-copy note instead |
 
-Existing files are never overwritten by default — pass `--force` to replace them, or
+Existing files are never overwritten by default — pass `--force` (or `-y`) to replace them, or
 `--uninstall` to remove them:
 
 ```bash

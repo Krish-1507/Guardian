@@ -7,7 +7,7 @@ export interface InstallTarget {
   path: string;
   tool: string;
   level: "project" | "home";
-  transform?: "skill" | "workflow";
+  transform?: "skill" | "workflow" | "gemini";
   note?: string;
 }
 
@@ -54,6 +54,12 @@ export function projectTargets(cwd: string): InstallTarget[] {
       tool: "Kilo Code (project, legacy — auto-migrated)",
       level: "project",
     },
+    {
+      path: p(".gemini", "commands", "guardian.toml"),
+      tool: "Gemini CLI (project)",
+      level: "project",
+      transform: "gemini",
+    },
   ];
 }
 
@@ -69,12 +75,42 @@ export function homeTargets(): InstallTarget[] {
     },
     { path: h(".claude", "commands", "guardian.md"), tool: "Claude Code (user)", level: "home" },
     { path: h(".cursor", "commands", "guardian.md"), tool: "Cursor (user)", level: "home" },
-    { path: h(".opencode", "commands", "guardian.md"), tool: "OpenCode (user)", level: "home" },
+    // OpenCode current docs: global commands in ~/.config/opencode/commands/;
+    // ~/.opencode/commands/ is the older location — keep both.
+    {
+      path: h(".config", "opencode", "commands", "guardian.md"),
+      tool: "OpenCode (user)",
+      level: "home",
+    },
+    {
+      path: h(".opencode", "commands", "guardian.md"),
+      tool: "OpenCode (user, legacy)",
+      level: "home",
+    },
+    // Antigravity global workflows (home) mirror the project layout.
+    {
+      path: h(".agent", "workflows", "guardian.md"),
+      tool: "Antigravity (user)",
+      level: "home",
+      transform: "workflow",
+    },
+    {
+      path: h(".agents", "workflows", "guardian.md"),
+      tool: "Antigravity (user, plural legacy)",
+      level: "home",
+      transform: "workflow",
+    },
     { path: h(".config", "kilo", "commands", "guardian.md"), tool: "Kilo Code (user)", level: "home" },
     {
       path: h(".kilocode", "workflows", "guardian.md"),
       tool: "Kilo Code (user, legacy — auto-migrated)",
       level: "home",
+    },
+    {
+      path: h(".gemini", "commands", "guardian.toml"),
+      tool: "Gemini CLI (user)",
+      level: "home",
+      transform: "gemini",
     },
   ];
 }
@@ -98,7 +134,9 @@ export function resolveTemplatePath(): string {
  * Render the file content for a target. The Claude Code skill variant rewrites
  * the frontmatter to { name, description } as skills require. The Antigravity
  * workflow variant normalizes the frontmatter to `description` only (their
- * required field) and keeps the title + numbered steps body as-is.
+ * required field) and keeps the title + numbered steps body as-is. The Gemini
+ * CLI variant converts to TOML ({ description = "...", prompt = """ body """ }),
+ * the format .gemini/commands/*.toml files must use.
  */
 export function renderContent(target: InstallTarget, templateText: string): string {
   if (target.transform === "skill") {
@@ -118,6 +156,16 @@ export function renderContent(target: InstallTarget, templateText: string): stri
     const descMatch = fm.match(/description:\s*(.+?)\s*$/m);
     const description = descMatch ? descMatch[1].trim() : "";
     return `---\ndescription: ${description}\n---\n\n${body}`;
+  }
+  if (target.transform === "gemini") {
+    const m = templateText.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+    if (!m) return templateText;
+    const fm = m[1];
+    const body = m[2];
+    const descMatch = fm.match(/description:\s*(.+?)\s*$/m);
+    let description = descMatch ? descMatch[1].trim() : "";
+    description = description.replace(/^"|"$/g, "");
+    return `description = "${description}"\nprompt = """\n${body.trim()}\n"""\n`;
   }
   return templateText;
 }
