@@ -23,6 +23,28 @@ description: "Autonomous engineering quality loop — scans, shows findings, fix
 > - It contains anything else (a phrase, a repo path, an instruction) → **mode = default**
 >   full loop: treat that text as context/instructions and continue with the loop below.
 
+## Step 0 — Show your instructions (MANDATORY, first message)
+
+Your **entire first message** to the user must be this exact block, with the blanks filled
+in — this is how the user sees, in their own window, the prompt they just invoked. Print
+nothing else in that first message. (If the mode is `menu`, print this block, then end your
+turn and wait as the menu section says.)
+
+```
+GUARDIAN prompt received. I am operating under exactly these instructions:
+
+Mode: <menu | --scan-only | --demo | --ledger | --integrity-only | default full loop>
+Sequence: scan → show the box verbatim → ONE confirmation pause → fix cluster-by-cluster
+(repro test must fail first, then pass after the fix) → verify (integrity gate) →
+commit with the repro test → re-scan → final GUARDIAN_REPORT.md
+Guardrails: stay on a guardian/* branch · never touch secrets, .git, or CI/deploy config ·
+never loosen, delete, or hardcode-to-pass tests · never force-push ·
+hard stops: 10 fix iterations or 45 minutes
+```
+
+Then continue with the matching "## Mode:" section below. This block is your proof-of-
+instructions; you are not free to deviate from anything it summarizes.
+
 ## Mode: menu (bare `/guardian`)
 
 Print **exactly this menu as your entire response**, then **end your turn and wait** for

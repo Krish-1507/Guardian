@@ -85,7 +85,35 @@ Legacy/alternate locations are also written where tool docs are inconsistent acr
 (jest/vitest/pytest — pass/fail, duration, coverage), build performance, accessibility,
 reliability (flaky tests, race-condition heuristics), and DevEx (unused exports, duplicate
 functions). A category whose underlying tool isn't installed prints `skipped` instead of a
-made-up number.
+made-up number. The box always opens with the **Guardian Score**: a single 0–100 health
+number (with an A–F grade) computed across the categories that actually ran.
+
+### Bonus commands
+
+| Command | What it does |
+|---|---|
+| `guardian inspect <finding-id>` | Deep-dive on one finding: code snippet, root-cause cluster context, whether a permanent repro test exists, and Guardian's memory of the files. `npx cli-guardian report --html` also embeds the score. |
+| `guardian trends` | Turns the `.guardian/scan-*.json` history into per-category sparklines plus a score trend — watch the loop actually improve a repo. |
+| `guardian report --html` | Writes a single self-contained `GUARDIAN_REPORT.html` (inline SVG trend charts, integrity-gate timeline, zero external assets — send it to a stakeholder and it just works). Every `guardian report` also writes `GUARDIAN_BADGE.svg`, a README-ready shield: `![Guardian score](GUARDIAN_BADGE.svg)`. |
+| `guardian doctor` | Explains why categories are `skipped`: checks the toolchain (Node, git, jscpd, gitleaks, semgrep, pa11y) and prints copy-paste install hints. |
+| `guardian prompt [--args …]` | Prints the exact `/guardian` prompt your AI tool expands to, with your arguments substituted — full transparency into what the agent was told. |
+| `guardian scan --json` | Prints the raw scan result as JSON (pipeline-friendly; no banner/spinner pollution). |
+| `guardian verify` | Adds a **Guardian Score** row to the Δ table, so every fix iteration shows points moving, not just raw metrics. |
+
+### The score & badge
+
+Skipped categories are excluded and weights renormalized, so a missing `jscpd` never
+silently tanks the number. The verify Δ compares the score against the last scan with the
+*exact same categories measured* — a skipped category stays skipped on both sides, so the
+score only moves when the code does.
+
+### Prompt transparency
+
+Some AI tools show a slash-command's expanded prompt in their UI, some don't. Guardian
+guarantees it two ways: the `/guardian` prompt's **Step 0** makes the agent print the exact
+instructions it's operating under (mode, sequence, guardrails) as its very first message in
+your window — and `guardian prompt` lets you preview the raw prompt before anyone types
+anything.
 
 ### Root-cause correlation
 

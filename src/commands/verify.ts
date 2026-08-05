@@ -9,9 +9,10 @@ import { analyzePerf } from "../analyzers/perf.js";
 import { analyzeSecurity } from "../analyzers/security.js";
 import { analyzeDuplication } from "../analyzers/duplication.js";
 import { addEntry } from "../memory/store.js";
-import type { ScanResult } from "../analyzers/types.js";
+import type { ScanResult, ScanIssue } from "../analyzers/types.js";
 import type { VerifyMetrics } from "../report/format.js";
 import { classifyRisk, deltasOf, metricsOf } from "../verify/metrics.js";
+import { computeScore, type ScoreResult } from "../report/score.js";
 import { getDiff } from "../analyzers/integrity/git.js";
 import { buildIntegrityReport } from "../graph/integrity.js";
 import type { IntegrityFinding, Verdict } from "../analyzers/integrity/types.js";
@@ -64,6 +65,51 @@ function currentMetrics(repo: string): VerifyMetrics {
     securityCount: security.issues.length,
     duplicationCount: duplication.cloneCount,
   };
+}
+
+/**
+ * Verify re-measures only the fast metrics (tests/perf/security/dup), so the
+ * "current" Guardian Score is computed from the last scan with exactly those
+ * categories patched in — the other categories keep their scan snapshot.
+ */
+function currentScoreOf(
+  baselineResult: ScanResult,
+  current: VerifyMetrics,
+  integrityPenalty: number,
+): ScoreResult {
+  // Only patch categories that actually ran in the baseline scan; a category
+  // that printed "skipped" must stay skipped on both sides of the delta,
+  // otherwise the score could move for purely toolchain reasons.
+  const hybrid: ScanResult = { ...baselineResult };
+  if (hybrid.tests.status === "ok") {
+    hybrid.tests = {
+      status: "ok",
+      total: current.tests.total,
+      passed: current.tests.passed,
+      failed: current.tests.failed,
+      durationMs: current.tests.durationMs,
+      coverage: current.tests.coverage,
+    };
+  }
+  if (hybrid.perf.status === "ok") {
+    hybrid.perf = {
+      status: "ok",
+      buildTimeMs: current.perf.buildTimeMs,
+      bundleSizeBytes: current.perf.bundleSizeBytes,
+    };
+  }
+  if (hybrid.security.status === "ok") {
+    const synthetic: ScanIssue[] = Array.from({ length: current.securityCount }, () => ({
+      type: "security",
+      severity: "high",
+      description: "current security findings (from verify)",
+    }));
+    hybrid.security = { status: "ok", issues: synthetic };
+  }
+  if (hybrid.duplication.status === "ok") {
+    hybrid.duplication = { status: "ok", cloneCount: current.duplicationCount, clones: [] };
+  }
+  return computeScore(hybrid, { integrityPenalty });
 }
 
 function fmtBundle(b?: number): string {
@@ -119,6 +165,15 @@ export const verify = new Command("verify")
     const integrity = integrityGate(repo);
     const blocked =
       integrity.verdict === "SUSPICIOUS" || integrity.verdict === "CONFIRMED_CHEAT";
+    const integrityPenalty = blocked
+      ? integrity.verdict === "CONFIRMED_CHEAT"
+        ? 25
+        : 10
+      : 0;
+
+    const baselineScore = computeScore(baselineResult);
+    const currentScore = currentScoreOf(baselineResult, current, integrityPenalty);
+    const scoreDelta = currentScore.score - baselineScore.score;
 
     const table = new Table({
       head: ["Metric", "Baseline", "Current", "Δ"],
@@ -177,6 +232,14 @@ export const verify = new Command("verify")
       d.duplication,
       signed(d.duplication),
       false,
+    );
+    row(
+      "Guardian score",
+      `${baselineScore.score}/100 (${baselineScore.grade})`,
+      `${currentScore.score}/100 (${currentScore.grade})`,
+      scoreDelta,
+      scoreDelta > 0 ? `+${scoreDelta} pts` : `${scoreDelta} pts`,
+      true,
     );
 
     const riskColor = risk === "High" ? chalk.red : risk === "Medium" ? chalk.yellow : chalk.green;
@@ -245,12 +308,18 @@ export const verify = new Command("verify")
       deltas: d,
       baseline,
       current,
+      score: {
+        baseline: baselineScore.score,
+        current: currentScore.score,
+        delta: scoreDelta,
+        grade: currentScore.grade,
+      },
     };
     fs.writeFileSync(file, JSON.stringify(report, null, 2));
 
     const summary = blocked
       ? `verify BLOCKED (integrity ${integrity.verdict})`
-      : `verify ${risk}: tests ${signed(d.failed)} fail, bundle ${deltaBytes(d.bundleSizeBytes)}, security ${signed(d.security)}`;
+      : `verify ${risk}: score ${currentScore.score}/100 (${currentScore.grade}) · tests ${signed(d.failed)} fail, bundle ${deltaBytes(d.bundleSizeBytes)}, security ${signed(d.security)}`;
     addEntry(repo, {
       type: "fix",
       summary,

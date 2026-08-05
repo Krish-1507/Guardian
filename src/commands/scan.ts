@@ -1,6 +1,7 @@
 import { Command } from "commander";
-import chalk from "chalk";
+import chalk, { type ChalkInstance } from "chalk";
 import boxen from "boxen";
+import ora from "ora";
 import path from "node:path";
 import fs from "node:fs";
 import { runAllAnalyzers } from "../analyzers/index.js";
@@ -8,6 +9,7 @@ import { runLedgerAnalyzer } from "../analyzers/ledger/index.js";
 import { correlate } from "../graph/correlate.js";
 import { relevantEntriesForFiles, type MemoryType } from "../memory/store.js";
 import { stampFindings, findingIdFor } from "../repro/ids.js";
+import { computeScore, type ScoreResult } from "../report/score.js";
 import type { ScanResult } from "../analyzers/types.js";
 
 function memTypeColor(t: MemoryType): (s: string) => string {
@@ -29,8 +31,26 @@ function label(text: string): string {
   return chalk.bold(text.padEnd(17));
 }
 
-function renderBox(r: ScanResult): string {
+function scorePaint(s: ScoreResult): ChalkInstance {
+  switch (s.grade[0]) {
+    case "A": return chalk.greenBright;
+    case "B":
+    case "C": return chalk.yellow;
+    default: return chalk.red;
+  }
+}
+
+export function renderBox(r: ScanResult): string {
   const lines: string[] = [];
+
+  const sc = computeScore(r);
+  const paint = scorePaint(sc);
+  const skippedHint =
+    sc.analyzed < sc.total ? chalk.dim(` · ${sc.total - sc.analyzed} skipped`) : "";
+  lines.push(
+    `${label("Guardian Score")}: ${paint.bold(`${sc.score}/100 (${sc.grade})`)}${skippedHint}`,
+  );
+  lines.push("");
 
   const dg = r.dependencyGraph;
   if (dg.status === "ok") {
@@ -281,13 +301,39 @@ export const scan = new Command("scan")
       "endpoints (charge/capture/payment/transfer/refund/webhook) for missing " +
       "idempotency. Never runs unless --ledger is passed.",
   )
-  .action(async (repoArg: string, options: { ledger?: boolean }) => {
+  .option("--json", "print the raw scan result as JSON instead of the boxed report")
+  .action(async (repoArg: string, options: { ledger?: boolean; json?: boolean }) => {
     const repo = path.resolve(repoArg);
-    console.log(
-      chalk.cyan(`\nScanning ${repo}${options.ledger ? " with --ledger" : ""} ...\n`),
-    );
+    if (!options.json) {
+      console.log(
+        chalk.cyan(`\nScanning ${repo}${options.ledger ? " with --ledger" : ""} ...\n`),
+      );
+    }
 
-    const { result, file } = await runScan(repo, { ledger: options.ledger });
+    const run = async () => {
+      const { result, file } = await runScan(repo, { ledger: options.ledger });
+      return { result, file };
+    };
+
+    let result: ScanResult;
+    let file: string;
+    if (options.json) {
+      ({ result, file } = await run());
+    } else {
+      const spin = ora("Running analyzers").start();
+      try {
+        ({ result, file } = await run());
+        spin.succeed("Scan complete");
+      } catch (err: any) {
+        spin.fail("Scan failed");
+        throw err;
+      }
+    }
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
 
     console.log(renderBox(result));
     console.log(chalk.dim(`\nReports written to ${file}\n`));
