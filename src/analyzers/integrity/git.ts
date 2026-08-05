@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { safeExec, safeExecShell } from "../util.js";
+import { safeExec } from "../util.js";
 import { languageOf, makeChange, linesToDiff } from "./helpers.js";
 import type { FileChange, DiffLine, FileStatus } from "./types.js";
 
@@ -10,6 +10,11 @@ import type { FileChange, DiffLine, FileStatus } from "./types.js";
  *
  * `to` omitted => compare `from` against the current working tree (unstaged +
  * staged + untracked). `to` given => compare the two refs.
+ *
+ * LINE ENDINGS: Windows git (core.autocrlf) typically checks out CRLF working
+ * trees. Diff output from git is always LF, but raw file content is not — so
+ * before/after content is normalized to `\n` here; all detectors then
+ * pattern-match LF-only text regardless of platform.
  */
 
 interface ParsedDiff {
@@ -24,15 +29,19 @@ function gitOk(repo: string, args: string[]): boolean {
   return safeExec("git", args, repo).code === 0;
 }
 
+function normalizeEol(text: string): string {
+  return text.replace(/\r\n/g, "\n");
+}
+
 function showAtRef(repo: string, ref: string, file: string): string | undefined {
   const r = safeExec("git", ["show", `${ref}:${file}`], repo);
   if (r.code !== 0) return undefined;
-  return r.stdout;
+  return normalizeEol(r.stdout);
 }
 
 function readWorking(repo: string, file: string): string | undefined {
   try {
-    return fs.readFileSync(path.join(repo, file), "utf8");
+    return normalizeEol(fs.readFileSync(path.join(repo, file), "utf8"));
   } catch {
     return undefined;
   }

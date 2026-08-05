@@ -3,9 +3,9 @@ import chalk from "chalk";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import { execFileSync } from "node:child_process";
+import { execaSync } from "execa";
 import { fileURLToPath } from "node:url";
-import { safeExec, safeExecShell } from "../analyzers/util.js";
+import { safeExec } from "../analyzers/util.js";
 
 export const demo = new Command("demo")
   .description(
@@ -28,9 +28,8 @@ export const demo = new Command("demo")
 
     // Best-effort: install deps so the loop can actually run tests/verify.
     // npm may exit non-zero on audit warnings; that's fine as long as the
-    // packages landed. Uses the shell so `npm` resolves on Windows too (the
-    // npm.cmd shim is not directly spawnable via execFile).
-    safeExecShell("npm install", tmp, 600000);
+    // packages landed. execa resolves the npm.cmd shim on Windows.
+    safeExec("npm", ["install"], tmp, 600000);
     const ready = fs.existsSync(path.join(tmp, "node_modules", "jest"));
     console.log(
       ready
@@ -62,7 +61,7 @@ export const demo = new Command("demo")
 
     // Install the /guardian slash command into the temp repo (and user home).
     const cli = path.join(repoRoot, "dist", "cli.js");
-    execFileSync("node", [cli, "install", tmp], { stdio: "inherit" });
+    execaSync("node", [cli, "install", tmp], { stdio: "inherit" });
 
     console.log(
       `\ncd ${tmp}, open it in Claude Code/Cursor/OpenCode, type /guardian, hit enter.`,

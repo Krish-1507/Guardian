@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execa, type Subprocess } from "execa";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -72,7 +72,7 @@ function resolveStart(repo: string): StartCommand {
 
 async function waitForServer(
   baseUrl: string,
-  child: ChildProcess,
+  exited: () => boolean,
   controlPath: string,
   timeoutMs: number,
 ): Promise<{ up: boolean; aborted: boolean }> {
@@ -91,7 +91,7 @@ async function waitForServer(
   while (Date.now() < deadline) {
     const aborted = controlAborted(controlPath);
     if (aborted) return { up: false, aborted: true };
-    if (child.exitCode !== null) {
+    if (exited()) {
       return { up: false, aborted: controlAborted(controlPath) };
     }
     if ((await armed()) && baseUrl) {
@@ -182,12 +182,25 @@ export async function startHarness(
     NODE_ENV: process.env.NODE_ENV || "test",
   };
 
-  const child = spawn(start.cmd, start.args, {
+  const child = execa(start.cmd, start.args, {
     cwd: repo,
     env,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
+    reject: false,
+    maxBuffer: 50 * 1024 * 1024,
   });
+
+  // execa's subprocess is a promise (never rejects with `reject: false`);
+  // track completion so the poll loop can detect an early exit.
+  let exited = false;
+  child
+    .then(() => {
+      exited = true;
+    })
+    .catch(() => {
+      exited = true;
+    });
 
   const outFd = fs.openSync(appOut, "a");
   const pump = (chunk: Buffer | string) =>
@@ -197,7 +210,7 @@ export async function startHarness(
 
   const { up, aborted } = await waitForServer(
     baseUrl,
-    child,
+    () => exited,
     controlPath,
     STARTUP_TIMEOUT_MS,
   );

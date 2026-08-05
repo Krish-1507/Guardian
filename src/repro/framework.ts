@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { execa } from "execa";
 
 export type TestFramework = "jest" | "vitest" | "node-test" | "pytest";
 
@@ -56,7 +56,7 @@ export function reproExtension(framework: TestFramework): string {
 }
 
 /** Run a single test file and report pass/fail. */
-export function runTestFile(
+export async function runTestFile(
   repo: string,
   file: string,
   extraEnv: Record<string, string> = {},
@@ -68,81 +68,67 @@ export function runTestFile(
   // repo-relative path is required: an absolute path with Windows 8.3 short
   // segments (e.g. KRISH_~1) does not match rootDir and yields "No tests found".
   const rel = path.relative(repo, file);
-  return new Promise((resolve) => {
-    let cmd: string;
-    let args: string[];
-    const local = (rel: string) => path.join(repo, rel);
-    switch (framework) {
-      case "jest": {
-        // Prefer the repo's own jest binary (like the reliability analyzer does)
-        // to avoid npx/.cmd resolution issues on Windows.
-        const jestBin = local("node_modules/jest/bin/jest.js");
-        if (fs.existsSync(jestBin)) {
-          cmd = "node";
-          args = [jestBin, rel, "--runInBand", "--runTestsByPath"];
-        } else {
-          cmd = "npx";
-          args = ["jest", rel, "--runInBand", "--runTestsByPath"];
-        }
-        break;
-      }
-      case "vitest": {
-        const vitestBin = local("node_modules/vitest/vitest.mjs");
-        if (fs.existsSync(vitestBin)) {
-          cmd = "node";
-          args = [vitestBin, "run", rel, "--reporter=basic"];
-        } else {
-          cmd = "npx";
-          args = ["vitest", "run", rel, "--reporter=basic"];
-        }
-        break;
-      }
-      case "pytest": {
-        cmd = "python";
-        args = ["-m", "pytest", file, "-q"];
-        break;
-      }
-      case "node-test":
-      default: {
+  let cmd: string;
+  let args: string[];
+  const local = (r: string) => path.join(repo, r);
+  switch (framework) {
+    case "jest": {
+      // Prefer the repo's own jest binary (like the reliability analyzer does)
+      // to avoid npx/.cmd resolution issues on Windows.
+      const jestBin = local("node_modules/jest/bin/jest.js");
+      if (fs.existsSync(jestBin)) {
         cmd = "node";
-        args = ["--test", file];
-        break;
+        args = [jestBin, rel, "--runInBand", "--runTestsByPath"];
+      } else {
+        cmd = "npx";
+        args = ["jest", rel, "--runInBand", "--runTestsByPath"];
       }
+      break;
     }
-    const child = spawn(cmd, args, {
+    case "vitest": {
+      const vitestBin = local("node_modules/vitest/vitest.mjs");
+      if (fs.existsSync(vitestBin)) {
+        cmd = "node";
+        args = [vitestBin, "run", rel, "--reporter=basic"];
+      } else {
+        cmd = "npx";
+        args = ["vitest", "run", rel, "--reporter=basic"];
+      }
+      break;
+    }
+    case "pytest": {
+      cmd = "python";
+      args = ["-m", "pytest", file, "-q"];
+      break;
+    }
+    case "node-test":
+    default: {
+      cmd = "node";
+      args = ["--test", file];
+      break;
+    }
+  }
+  // execa resolves PATH/PATHEXT correctly on Windows (npx.cmd, node.exe,
+  // python.exe) and collects stdout/stderr with a native timeout.
+  try {
+    const res = await execa(cmd, args, {
       cwd: repo,
       env,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
+      timeout: timeoutMs,
+      reject: false,
+      maxBuffer: 50 * 1024 * 1024,
     });
-    let stdout = "";
-    let stderr = "";
-    child.stdout?.on("data", (d: Buffer) => (stdout += d.toString()));
-    child.stderr?.on("data", (d: Buffer) => (stderr += d.toString()));
-    let done = false;
-    const timer = setTimeout(() => {
-      if (done) return;
-      done = true;
-      try {
-        child.kill();
-      } catch {
-        /* ignore */
-      }
-      resolve({ code: -1, stdout, stderr, timedOut: true });
-    }, timeoutMs);
-    child.on("close", (code) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      resolve({ code: code ?? -1, stdout, stderr, timedOut: false });
-    });
-    child.on("error", () => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      resolve({ code: -1, stdout, stderr, timedOut: false });
-    });
-  });
+    return {
+      code: typeof res.exitCode === "number" ? res.exitCode : -1,
+      stdout: res.stdout ?? "",
+      stderr: res.stderr ?? "",
+      timedOut: res.timedOut ?? false,
+    };
+  } catch (err: any) {
+    return { code: -1, stdout: "", stderr: err?.message ?? String(err), timedOut: false };
+  }
 }
 
 export function frameworkLabel(framework: TestFramework | null): string {
