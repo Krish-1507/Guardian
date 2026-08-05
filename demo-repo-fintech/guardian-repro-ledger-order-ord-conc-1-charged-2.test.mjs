@@ -7,7 +7,7 @@
 //   Gateway contract: exactly ONE charge for key "pay_idem_conc_1"
 //   (observed now: 2 charges — the bug this test exists to guard).
 //
-// Run via: npx guardian-cli repro ledger-18f7bcc7
+// Run via: npx cli-guardian repro ledger-18f7bcc7
 // The app is booted under Guardian's nock sandbox, so no request can ever reach
 // a real payment gateway; the "gateway" is a local mock that records every call.
 // This test MUST FAIL on the buggy code and MUST PASS only after the fix.
@@ -97,7 +97,7 @@ function countCharges(gatewayLogPath) {
 }
 
 test("guardian repro ledger-18f7bcc7: exactly one gateway charge for key '" + EXPECTED_KEY + "'", async () => {
-  assert.ok(PRELOAD, "GUARDIAN_LEDGER_PRELOAD not set — run this via `npx guardian-cli repro ledger-18f7bcc7`");
+  assert.ok(PRELOAD, "GUARDIAN_LEDGER_PRELOAD not set — run this via `npx cli-guardian repro ledger-18f7bcc7`");
 
   const start = resolveStart();
   const runDir = path.join(REPO, ".guardian", "repro", new Date().toISOString().replace(/[:.]/g, "-"));

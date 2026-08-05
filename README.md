@@ -2,7 +2,7 @@
 
 **Deterministic scans + your coding agent's own reasoning, in one autonomous quality loop.**
 
-`guardian-cli` gives any AI coding tool a `/guardian` slash-command that scans your repo,
+`cli-guardian` gives any AI coding tool a `/guardian` slash-command that scans your repo,
 shows you a boxed summary of the root causes it found, waits for your **one-time
 confirmation**, then lets your agent autonomously fix, verify, re-scan, and repeat until
 nothing is left to fix.
@@ -51,7 +51,7 @@ Run it yourself in under two minutes:
 ```bash
 git clone https://github.com/Krish-1507/Guardian.git && cd Guardian
 npm install
-npx guardian-cli demo      # copies the intentionally-broken demo repo to a temp dir
+npx cli-guardian demo      # copies the intentionally-broken demo repo to a temp dir
 # open that repo in Claude Code / Cursor / OpenCode / Kilo Code / Codex, then:
 /guardian                  # a boxed scan summary appears...
 <Enter>                    # ...you confirm once, and watch it loop
@@ -63,7 +63,7 @@ npx guardian-cli demo      # copies the intentionally-broken demo repo to a temp
 
 Guardian is **two pieces glued together**:
 
-1. **A deterministic scan/verify engine** (`guardian-cli`). It reads your code and runs
+1. **A deterministic scan/verify engine** (`cli-guardian`). It reads your code and runs
    real tools to produce numbers, not opinions:
    - **Dependency graph** — circular imports, most-depended-on hubs, orphan files
    - **Security** — `npm audit` / `pip-audit`, `gitleaks` (secrets), `semgrep` (code)
@@ -137,7 +137,7 @@ deterministic and honest, while the agent's judgment decides what to change and 
 cd your-repo
 
 # 2. Install the /guardian slash-command into your coding tool(s)
-npx guardian-cli install
+npx cli-guardian install
 
 # 3. Open the repo in your tool and type:
 /guardian
@@ -148,7 +148,7 @@ Then: read the box, hit **enter**, watch it loop.
 ### Try it without a real project
 
 ```bash
-npx guardian-cli demo
+npx cli-guardian demo
 ```
 
 This copies the intentionally-broken `demo-repo` into a fresh temp directory, git-inits and
@@ -157,7 +157,7 @@ there, and prints where to open it. The demo is seeded with a circular dependenc
 secret, a known-CVE dependency, duplicated code, and failing tests — so you can watch the whole
 loop from a real `scan` down to a real `report`.
 
-Other fixtures: `npx guardian-cli demo demo-repo-integrity` (a hard float-rounding bug that
+Other fixtures: `npx cli-guardian demo demo-repo-integrity` (a hard float-rounding bug that
 exercises the integrity gate — see [The integrity gate](#the-integrity-gate--a-referee-for-the-referee)),
 `demo-repo-fintech` (the ledger double-charge fixture), and `demo-repo-generators`.
 
@@ -165,7 +165,7 @@ exercises the integrity gate — see [The integrity gate](#the-integrity-gate--a
 
 ## Installation paths
 
-`npx guardian-cli install` writes `guardian.prompt.md` (from `templates/`) to the following
+`npx cli-guardian install` writes `guardian.prompt.md` (from `templates/`) to the following
 locations. Run it inside your repo for the **project** rows; the **user** rows apply to every
 repo on your machine.
 
@@ -188,8 +188,8 @@ Existing files are never overwritten by default — pass `--force` to replace th
 `--uninstall` to remove them:
 
 ```bash
-npx guardian-cli install --force
-npx guardian-cli install --uninstall
+npx cli-guardian install --force
+npx cli-guardian install --uninstall
 ```
 
 ---
@@ -347,8 +347,8 @@ section, framed as the gate working rather than hidden.
 Run it directly against any repo:
 
 ```bash
-npx guardian-cli integrity .        # standalone: diff over --from..--to (default: previous commit → working tree)
-npx guardian-cli verify .           # the loop's gate: same scan, gated pre-commit
+npx cli-guardian integrity .        # standalone: diff over --from..--to (default: previous commit → working tree)
+npx cli-guardian verify .           # the loop's gate: same scan, gated pre-commit
 ```
 
 Try it against the companion fixture (from a build):
