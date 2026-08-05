@@ -12,6 +12,25 @@ nothing is left to fix.
 
 ---
 
+## Install — one line
+
+```bash
+npx cli-guardian@latest install
+```
+
+That's it. Run it inside your repo and `/guardian` is live in **Claude Code, Cursor,
+OpenCode, Antigravity, Kilo Code, Codex CLI, and Gemini CLI** — project-level for this
+repo, user-level so it also works in every other repo on your machine. Then open the repo
+in any tool and type:
+
+```
+/guardian
+```
+
+No repo handy? Try it instantly: `npx cli-guardian@latest demo`
+
+---
+
 ## Watch it run
 
 This is the actual boxed output `guardian scan` prints — verbatim from a real run against the
@@ -243,9 +262,19 @@ prompt, Guardian falls back to the menu rather than guessing.
 | `guardian integrity [repo]` | Standalone diff-scoped AI-agent-cheat scan over `--from..--to` (default: previous commit → working tree). Verdict CLEAN/SUSPICIOUS/CONFIRMED_CHEAT, exit 0/1/2; writes `.guardian/integrity-<timestamp>.json`. |
 | `guardian memory add "..." --type <fix\|decision\|rejection>` | Record a lesson for future scans to recall. |
 | `guardian report [repo]` | Aggregate scan/verify history into `GUARDIAN_REPORT.md` + a boxed terminal summary. |
+| `guardian install` | **One-command install** — writes `/guardian` into every supported tool at once (project + user level). Full syntax below the table. |
+| `guardian install -y` | Same install, **re-runnable**: overwrites existing guardian files with the latest template (idempotent — safe after updates). |
+| `guardian install --uninstall` | Remove every installed guardian file (project + user level). |
 | `guardian demo [fixture]` | Copy a broken demo repo (`demo-repo` by default; also `demo-repo-integrity`, `demo-repo-fintech`, `demo-repo-generators`) to a temp dir, git-init + baseline commit, and install the slash-command there. |
-| `guardian install [--force\|--uninstall]` | Install/remove the `/guardian` slash-command into your tools. |
 | `guardian ci [repo]` | Diagnostic-only: diff a PR against its base branch and print a markdown CI report (used by the GitHub Action). |
+
+> **Quick install from anywhere (no clone, no setup):**
+
+> ```
+> npx cli-guardian@latest install        # install /guardian into all your tools
+> npx cli-guardian@latest install -y     # refresh after updates (idempotent)
+> npx cli-guardian@latest demo           # try it on a broken demo repo in 30 seconds
+> ```
 
 ### What the engine detects
 
