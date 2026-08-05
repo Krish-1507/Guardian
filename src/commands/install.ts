@@ -17,14 +17,16 @@ const CODEX_APP_MESSAGE =
   "Codex App and Codex VS Code extension don't support custom slash commands yet (OpenAI hasn't shipped this) — use Codex CLI for /guardian, or copy templates/guardian.prompt.md's content directly into a Codex App chat as a one-off prompt.";
 
 export const install = new Command("install")
-  .description("Install the guardian slash-command into Claude Code, Cursor, OpenCode, Kilo Code, Codex")
+  .description("Install the guardian slash-command into Claude Code, Cursor, OpenCode, Antigravity, Kilo Code, Gemini CLI, Codex")
   .argument("[repo]", "target repo (defaults to cwd)", ".")
   .option("--force", "overwrite existing guardian files", false)
+  .option("-y, --yes", "same as --force (re-runnable one-liner: npx cli-guardian@latest install -y)", false)
   .option("--uninstall", "remove guardian files only", false)
   .action(async (repoArg: string, opts: any) => {
     const cwd = path.resolve(repoArg);
     const targets = getTargets(cwd);
     const codexNote = targets.find((t) => t.note)?.note;
+    const force = Boolean(opts.force || opts.yes);
 
     if (opts.uninstall) {
       const table = new Table({
@@ -61,7 +63,7 @@ export const install = new Command("install")
     for (const t of targets) {
       fs.mkdirSync(path.dirname(t.path), { recursive: true });
       const exists = fs.existsSync(t.path);
-      if (exists && !opts.force) {
+      if (exists && !force) {
         table.push([t.tool, t.path, chalk.yellow("⚠️ skipped — use --force")]);
         skipped++;
         continue;

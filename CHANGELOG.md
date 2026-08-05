@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.0] - 2026-08-05
+
+**Published to npm as `cli-guardian@0.3.0`.**
+
+### Added (one-command install & use)
+
+- **True one-command install**: `npx cli-guardian@latest install` writes `/guardian` into every
+  supported tool in one shot — project-level into the current repo, user-level so it works in any
+  repo. Runs idempotently with `-y`/`--force` (`npx cli-guardian@latest install -y` re-runs cleanly
+  after updates).
+- **Gemini CLI support** — first non-Markdown target. `install` now writes `.gemini/commands/guardian.toml`
+  (project) and `~/.gemini/commands/guardian.toml` (user) via a new `gemini` transform that converts the
+  prompt template to `{ description = "...", prompt = """ ... """ }`. Verified to load and route (model
+  quota blocked a full live run on test day, parse OK).
+- **Antigravity user/global targets** — `~/.agent/workflows/guardian.md` + `~/.agents/workflows/guardian.md`
+  (already had the project-level pair).
+- **Correct OpenCode user-level path** — global commands now also go to `~/.config/opencode/commands/`
+  (the current documented location; the older `~/.opencode/commands/` layout is kept as legacy). Verified
+  resolved from a fresh, project-less directory.
+
 ## [0.1.0] - 2026-08-05
 
 ### Changed
