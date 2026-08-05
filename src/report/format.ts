@@ -4,6 +4,7 @@ import chalk from "chalk";
 import boxen from "boxen";
 import type { ScanResult, Cluster } from "../analyzers/types.js";
 import type { IntegrityFinding, Verdict } from "../analyzers/integrity/types.js";
+import { computeScore, gradeColor, gradeHex, gradeOf, renderBadgeSvg } from "./score.js";
 
 export interface VerifyMetrics {
   tests: { total: number; passed: number; failed: number; durationMs: number; coverage?: number };
@@ -30,6 +31,8 @@ export interface VerifyReport {
   };
   baseline: VerifyMetrics;
   current: VerifyMetrics;
+  /** Guardian score at verify time (baseline vs patched current). */
+  score?: { baseline: number; current: number; delta: number; grade: string };
   /** Phase 16 integrity gate result captured by `guardian verify`. */
   integrity?: {
     verdict: Verdict;
@@ -191,6 +194,20 @@ export function buildModel(repo: string): ReportModel {
   const integrity = collectIntegrity(repo);
 
   const lines: MetricLine[] = [];
+
+  // Guardian Score — the headline number, computed from the latest scan.
+  if (!latestScan) {
+    lines.push({ label: "Guardian Score", value: NOT_SCANNED, color: "dim" });
+  } else {
+    const sc = computeScore(latestScan);
+    const analyzed =
+      sc.analyzed < sc.total ? ` — ${sc.analyzed}/${sc.total} categories` : "";
+    lines.push({
+      label: "Guardian Score",
+      value: `${sc.score}/100 (${sc.grade})${analyzed}`,
+      color: gradeColor(sc.grade),
+    });
+  }
 
   // Critical Issues Fixed — derived from improvements in the latest verify.
   if (!latestVerify) {
@@ -617,6 +634,10 @@ export function renderMarkdown(model: ReportModel, opts: MarkdownOptions = {}): 
   out.push(`_Generated ${model.generatedAt}_  `);
   out.push(`_Repo: \`${model.repo}\` · ${model.scansCount} scan(s), ${model.verifiesCount} verify(ies)_`);
   if (opts.headerNote) out.push(`_${opts.headerNote}_`);
+  if (model.latestScan) {
+    out.push("");
+    out.push(`![Guardian score](GUARDIAN_BADGE.svg)`);
+  }
   out.push("");
 
   if (opts.clustersFirst) {
@@ -633,4 +654,214 @@ export function renderMarkdown(model: ReportModel, opts: MarkdownOptions = {}): 
   out.push(...notesSection());
 
   return out.join("\n");
+}
+
+/* ------------------------------------------------------------------ */
+/* Single-file HTML report                                             */
+/* ------------------------------------------------------------------ */
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Minimal inline-SVG line chart for a metric across scans. */
+function svgTrend(values: (number | null)[], colorHex: string): string {
+  const pts: { i: number; v: number }[] = [];
+  values.forEach((v, i) => {
+    if (v != null) pts.push({ i, v });
+  });
+  if (pts.length === 0) return `<p class="muted">no data</p>`;
+  const n = pts.length;
+  const W = Math.max(260, n * 44 + 40);
+  const H = 72;
+  const min = Math.min(...pts.map((p) => p.v));
+  const max = Math.max(...pts.map((p) => p.v));
+  const span = max - min || 1;
+  const x = (i: number): number => 18 + (n === 1 ? 0 : (i * (W - 44)) / (n - 1));
+  const y = (v: number): number => H - 14 - ((v - min) / span) * (H - 30);
+  const line = pts.map((p) => `${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  const dots = pts
+    .map((p) => `<circle cx="${x(p.i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="3" fill="${colorHex}"/>`)
+    .join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="trend">
+    <polyline points="${line}" fill="none" stroke="${colorHex}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}
+    <text x="18" y="${H - 2}" font-size="10" fill="#8b949e">${min}</text>
+    <text x="18" y="11" font-size="10" fill="#8b949e">${max}</text>
+  </svg>`;
+}
+
+const LINE_HEX: Record<string, string> = {
+  green: "#3fb950",
+  yellow: "#d29922",
+  red: "#f85149",
+  dim: "#8b949e",
+};
+
+function verdictHex(v: Verdict): string {
+  return v === "CLEAN" ? "#3fb950" : v === "SUSPICIOUS" ? "#d29922" : "#f85149";
+}
+
+/**
+ * Self-contained HTML report (inline CSS, inline SVG charts, zero external
+ * assets) — the artifact you send to a stakeholder and it just works.
+ */
+export function renderHtml(model: ReportModel): string {
+  const hist = loadHistory(model.repo);
+  const scans = hist.scans;
+  const sc = model.latestScan ? computeScore(model.latestScan) : null;
+  const heroColor = sc ? gradeHex(sc.grade) : "#58a6ff";
+  const badge = sc ? `<div class="badge">${escapeHtml(renderBadgeSvg(sc))}</div>` : "";
+  const time = model.generatedAt.slice(0, 19).replace("T", " ");
+
+  const summaryRows = model.lines
+    .map((l) => {
+      const c = LINE_HEX[l.color ?? "dim"] ?? "#8b949e";
+      return `<tr><td class="label">${escapeHtml(l.label)}</td><td style="color:${c}">${escapeHtml(l.value)}</td></tr>`;
+    })
+    .join("\n");
+
+  const clusterCards = (() => {
+    if (model.clusters.length === 0) return `<p class="muted">No root-cause clusters identified.</p>`;
+    return model.clusters
+      .map(
+        (c, i) => `
+    <div class="card">
+      <h3>${i + 1}. Root cause <span class="chip" style="color:${c.rootCause.severity === "critical" || c.rootCause.severity === "high" ? "#f85149" : "#d29922"}">${escapeHtml(c.rootCause.severity.toUpperCase())} ${escapeHtml(c.rootCause.type)}</span>${c.rootCause.id ? ` <code>${escapeHtml(c.rootCause.id)}</code>` : ""}</h3>
+      <p>${escapeHtml(c.rootCause.description)}</p>
+      <p class="muted">→ ${c.symptoms.length} symptom(s) · shared: <code>${escapeHtml(c.sharedFiles.join("`, `"))}</code></p>
+      <ul>${c.symptoms.map((s) => `<li>(${escapeHtml(s.severity.toUpperCase())} ${escapeHtml(s.type)}) ${escapeHtml(s.description)}</li>`).join("")}</ul>
+    </div>`,
+      )
+      .join("\n");
+  })();
+
+  const beforeAfter = (() => {
+    const v = model.latestVerify;
+    if (!v) return `<p class="muted">No verify history — run \`guardian verify\` to populate the before/after diff.</p>`;
+    const b = v.baseline;
+    const cur = v.current;
+    const d = v.deltas;
+    const cell = (n: number, unit: string, higherIsBetter: boolean): string => {
+      if (n === 0) return `<span class="muted">0</span>`;
+      const good = higherIsBetter ? n > 0 : n < 0;
+      const sign = n > 0 ? "+" : "";
+      const val = unit === "KB" ? `${sign}${(n / 1024).toFixed(1)} KB` : unit === "ms" ? `${sign}${n} ms` : unit === "%" ? `${sign}${n.toFixed(1)}%` : `${sign}${n}`;
+      return `<span style="color:${good ? "#3fb950" : "#f85149"}">${val}</span>`;
+    };
+    const kb = (x?: number) => (x == null ? "—" : `${(x / 1024).toFixed(1)} KB`);
+    const ms = (x?: number) => (x == null ? "—" : `${x} ms`);
+    const pct = (x?: number) => (x == null ? "—" : `${x.toFixed(1)}%`);
+    const r = (name: string, base: string, curr: string, dlt: string): string =>
+      `<tr><td class="label">${name}</td><td>${base}</td><td>${curr}</td><td>${dlt}</td></tr>`;
+    return `
+  <div class="card">
+    <h3>Before / After <span class="chip">risk: <b style="color:${v.risk === "High" ? "#f85149" : v.risk === "Medium" ? "#d29922" : "#3fb950"}">${v.risk}</b></span></h3>
+    <table><thead><tr><th>Metric</th><th>Baseline</th><th>Current</th><th>Δ</th></tr></thead><tbody>
+      ${r("Guardian score", `${v.score?.baseline ?? "—"}/100 (${v.score ? gradeOf(v.score.current) : ""})`, `${v.score?.current ?? "—"}/100`, cell(v.score?.delta ?? 0, "", true))}
+      ${r("Tests passed", String(b.tests.passed), String(cur.tests.passed), cell(d.passed, "", true))}
+      ${r("Tests failed", String(b.tests.failed), String(cur.tests.failed), cell(d.failed, "", false))}
+      ${r("Duration", ms(b.tests.durationMs), ms(cur.tests.durationMs), cell(d.durationMs, "ms", false))}
+      ${r("Coverage", pct(b.tests.coverage), pct(cur.tests.coverage), cell(d.coverage, "%", true))}
+      ${r("Build time", ms(b.perf.buildTimeMs), ms(cur.perf.buildTimeMs), cell(d.buildTimeMs, "ms", false))}
+      ${r("Bundle size", kb(b.perf.bundleSizeBytes), kb(cur.perf.bundleSizeBytes), cell(d.bundleSizeBytes, "KB", false))}
+      ${r("Security findings", String(b.securityCount), String(cur.securityCount), cell(d.security, "", false))}
+      ${r("Duplication clones", String(b.duplicationCount), String(cur.duplicationCount), cell(d.duplication, "", false))}
+    </tbody></table>
+  </div>`;
+  })();
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>GUARDIAN — ${escapeHtml(model.repo)}</title>
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:0;padding:32px 16px}
+  .wrap{max-width:860px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  .muted{color:#8b949e;font-size:13px}
+  .sub{color:#8b949e;font-size:13px;margin-bottom:24px}
+  .hero{display:flex;align-items:center;gap:20px;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:24px;margin-bottom:24px;flex-wrap:wrap}
+  .score{font-size:56px;font-weight:800;line-height:1;color:${heroColor}}
+  .grd{font-size:22px;font-weight:700;color:${heroColor}}
+  .badge{margin-top:4px}
+  h2{font-size:16px;border-bottom:1px solid #30363d;padding-bottom:8px;margin:32px 0 12px;color:#f0f6fc}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid #21262d}
+  th{color:#8b949e;font-weight:600}
+  .label{font-weight:600;color:#c9d1d9}
+  code{background:#21262d;padding:1px 6px;border-radius:5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:16px 20px;margin-bottom:16px}
+  .card h3{margin:0 0 8px;font-size:14px}
+  .card p{margin:4px 0;font-size:13px}
+  .card ul{margin:6px 0 0;padding-left:20px;font-size:13px}
+  .card li{margin:2px 0}
+  .chip{background:#21262d;border-radius:20px;padding:1px 10px;font-size:12px;margin-left:8px;font-weight:600}
+  .verdict{display:inline-block;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:700;margin:2px 4px 2px 0}
+  .trend .card{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .trend .card h3{min-width:180px;margin:0}
+  .trend .card div{flex:1;min-width:260px}
+  .footer{color:#8b949e;font-size:12px;margin-top:40px;text-align:center}
+  a{color:#58a6ff}
+</style>
+</head>
+<body><div class="wrap">
+  <h1>GUARDIAN — Repository Analysis</h1>
+  <p class="sub">${escapeHtml(model.repo)} · generated ${time} · ${model.scansCount} scan(s), ${model.verifiesCount} verify(ies)</p>
+
+  <div class="hero">
+    ${sc ? `<div><div class="score">${sc.score}<span style="font-size:20px">/100</span></div><div class="grd">${sc.grade}</div></div>` : `<div class="score" style="font-size:24px">no scan yet</div>`}
+    ${badge}
+    <p class="muted" style="flex-basis:100%;margin:0">${sc ? `${sc.analyzed}/${sc.total} categories analyzed. A higher number is healthier.` : "Run <code>guardian scan</code> to score this repo."}</p>
+  </div>
+
+  <h2>Summary</h2>
+  <table><tbody>${summaryRows}</tbody></table>
+
+  <h2>Root-Cause Clusters</h2>
+  ${clusterCards}
+
+  <h2>Before / After</h2>
+  ${beforeAfter}
+
+  <h2>Trends across scans</h2>
+  <div class="trend">
+    ${[
+      { label: "Security issues", color: "#f85149", get: (s: ScanResult) => (s.security.status === "ok" ? s.security.issues.length : null) },
+      { label: "Circular imports", color: "#d29922", get: (s: ScanResult) => (s.dependencyGraph.status === "ok" ? s.dependencyGraph.circular.length : null) },
+      { label: "Duplication clones", color: "#d29922", get: (s: ScanResult) => (s.duplication.status === "ok" ? s.duplication.cloneCount : null) },
+      { label: "Failed tests", color: "#f85149", get: (s: ScanResult) => (s.tests.status === "ok" ? s.tests.failed : null) },
+      { label: "Test coverage %", color: "#3fb950", get: (s: ScanResult) => (s.tests.status === "ok" ? s.tests.coverage ?? null : null) },
+      { label: "Guardian score", color: "#58a6ff", get: (s: ScanResult) => computeScore(s).score },
+    ]
+      .map((m) => `<div class="card"><h3>${m.label}</h3><div>${svgTrend(scans.map(m.get), m.color)}</div></div>`)
+      .join("\n")}
+  </div>
+
+  ${model.integrity && model.integrity.checks > 0
+    ? `<h2>Integrity gate</h2>
+  <div class="card"><p>${model.integrity.checks} check(s) · ${model.integrity.catches} catch(es) · ${model.integrity.selfCorrected} self-corrected</p>
+    <p>${model.integrity.events
+      .map(
+        (e) =>
+          `<span class="verdict" style="background:${verdictHex(e.verdict)}22;color:${verdictHex(e.verdict)};border:1px solid ${verdictHex(e.verdict)}">${e.verdict}</span><span class="muted">${e.timestamp.slice(0, 19).replace("T", " ")} · ${e.findings.length} finding(s)</span>`,
+      )
+      .join("<br/>")}</p></div>`
+    : ""}
+
+  <h2>Fixes shipped with permanent proof</h2>
+  <div class="card">
+    ${model.proofs.length === 0 ? `<p class="muted">No guardian-repro-*.test.* files are committed.</p>` : `<table><thead><tr><th>Finding</th><th>Proved by</th></tr></thead><tbody>${model.proofs.map((p) => `<tr><td><code>${escapeHtml(p.findingId ?? "?")}</code></td><td><code>${escapeHtml(p.file)}</code></td></tr>`).join("")}</tbody></table>`}
+  </div>
+
+  <div class="footer">Generated by cli-guardian · every figure read from .guardian/scan-*.json and .guardian/verify-*.json</div>
+</div></body></html>`;
 }

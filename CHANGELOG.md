@@ -2,6 +2,46 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.0] - 2026-08-05
+
+### Added (the WOW release)
+
+- **Guardian Score.** Every scan box now opens with a single 0–100 health score + A–F grade,
+  weighted across the categories that actually ran (skipped categories are excluded and weights
+  renormalized, so a missing `jscpd` never silently tanks the number). `guardian verify` gained a
+  "Guardian score" Δ row: the baseline/current comparison only patches categories that measured
+  in both runs, so the score only moves when the code does — never when a tool is missing.
+- **`guardian inspect <finding-id>`** — deep dive on any finding id from a scan box: severity,
+  exact location, ±6-line code snippet with the target line highlighted, root-cause cluster
+  context (root cause vs symptom), whether a permanent repro test is committed, and Guardian's
+  memory of the files. Ledger/perf findings get their evidence details too.
+- **`guardian trends`** — per-category sparklines + a score trend across the
+  `.guardian/scan-*.json` history, plus a verify timeline with risk and integrity verdicts.
+- **`guardian report --html`** — self-contained single-file HTML report: score hero with inline
+  badge, summary table, root-cause clusters, before/after, inline-SVG trend charts, integrity-gate
+  timeline, zero external assets. Every `guardian report` also writes `GUARDIAN_BADGE.svg`, a
+  README-ready shield badge (`![Guardian score](GUARDIAN_BADGE.svg)`), and the markdown report
+  embeds it.
+- **`guardian doctor`** — toolchain health check: Node/git/npm plus jscpd, gitleaks, semgrep,
+  pa11y with copy-paste install hints — one command explains exactly why categories print
+  "skipped".
+- **`guardian prompt [--args …]`** — prints the exact rendered `/guardian` prompt (with the
+  invocation arguments substituted) so users can preview what their AI tool will send, in every
+  supported tool, regardless of how the tool's UI renders slash commands.
+- **Prompt Step 0 (mandatory transparency).** `/guardian` now makes the agent open its first
+  message by printing the exact instructions it received (mode, sequence, guardrails) — the user
+  sees the prompt in their own window in every supported tool.
+- **`guardian scan --json`** — raw scan result as clean JSON for pipelines (no banner/spinner
+  pollution); **live spinners** (ora, previously an unused dependency) on `scan` and `demo`.
+- **`guardian demo` wow moment** — the demo command now scans the seeded-broken demo repo and
+  prints the full boxed report immediately, so first-time users see the product without needing
+  an AI tool, a browser tab, or any setup.
+
+### Fixed
+
+- **`guardian --version` returned a hardcoded `0.1.0`.** It now reads the real version from
+  `package.json` (was out of sync since the package was renamed to `cli-guardian`).
+
 ## [0.3.1] - 2026-08-05
 
 ### Fixed

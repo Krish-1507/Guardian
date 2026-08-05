@@ -1,11 +1,13 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import ora from "ora";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { execaSync } from "execa";
 import { fileURLToPath } from "node:url";
 import { safeExec } from "../analyzers/util.js";
+import { runScan, renderBox } from "./scan.js";
 
 export const demo = new Command("demo")
   .description(
@@ -14,7 +16,7 @@ export const demo = new Command("demo")
       "commits a baseline so the integrity gate can diff fixes.",
   )
   .argument("[demo]", "demo fixture directory name (default: demo-repo)", "demo-repo")
-  .action((demoArg: string) => {
+  .action(async (demoArg: string) => {
     const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
     const demoName = path.basename(demoArg);
     const src = path.join(repoRoot, demoName);
@@ -63,7 +65,21 @@ export const demo = new Command("demo")
     const cli = path.join(repoRoot, "dist", "cli.js");
     execaSync("node", [cli, "install", tmp], { stdio: "inherit" });
 
+    // The wow moment: scan the seeded-broken demo repo RIGHT NOW and show the
+    // boxed report, so a first-time user sees the whole product without
+    // needing an AI tool, a browser tab, or any setup.
+    const spin = ora("Scanning the demo repo (this is the report your agent will see)").start();
+    try {
+      const { result } = await runScan(tmp);
+      spin.succeed("Demo scan complete");
+      console.log("\n" + renderBox(result));
+    } catch (err: any) {
+      spin.fail("Demo scan failed");
+      console.log(chalk.yellow(`could not scan the demo repo: ${err?.message ?? err}`));
+    }
+
     console.log(
-      `\ncd ${tmp}, open it in Claude Code/Cursor/OpenCode, type /guardian, hit enter.`,
+      `\n${chalk.bold("Next:")} cd ${tmp}, open it in Claude Code/Cursor/OpenCode, type /guardian, hit enter.\n` +
+        `The agent will fix the findings above, cluster by cluster, and loop until the score is clean.`,
     );
   });

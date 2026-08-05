@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import fs from "node:fs";
 import { install } from "./commands/install.js";
 import { scan } from "./commands/scan.js";
 import { verify } from "./commands/verify.js";
@@ -9,13 +10,28 @@ import { demo } from "./commands/demo.js";
 import { ci } from "./commands/ci.js";
 import { reproCmd } from "./commands/repro.js";
 import { integrity } from "./commands/integrity.js";
+import { inspect } from "./commands/inspect.js";
+import { trends } from "./commands/trends.js";
+import { doctor } from "./commands/doctor.js";
+import { prompt } from "./commands/prompt.js";
+
+function readVersion(): string {
+  try {
+    const pkg = JSON.parse(
+      fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { version?: string };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
 
 const program = new Command();
 
 program
   .name("guardian")
   .description("Guardian CLI")
-  .version("0.1.0");
+  .version(readVersion());
 
 program.addCommand(install);
 program.addCommand(scan);
@@ -26,5 +42,9 @@ program.addCommand(demo);
 program.addCommand(ci);
 program.addCommand(reproCmd);
 program.addCommand(integrity);
+program.addCommand(inspect);
+program.addCommand(trends);
+program.addCommand(doctor);
+program.addCommand(prompt);
 
 program.parseAsync(process.argv);
