@@ -49,6 +49,22 @@ All notable changes to this project are documented here.
 - **`windows-latest` CI job.** `.github/workflows/ci.yml` now runs build + smoke (`node dist/cli.js scan
   demo-repo`) on both `ubuntu-latest` and `windows-latest` via a matrix.
 
+- **Installer targets expanded and made honest (`src/installer/targets.ts`, `src/commands/install.ts`).**
+  Antigravity now receives workflow-formatted commands (`description`-only frontmatter + title + steps) in
+  both `.agent/workflows/` and `.agents/workflows/`; Kilo Code's home target moved to the current
+  `~/.config/kilo/commands/` (`.kilo/commands/` + legacy `.kilocode/workflows/` kept); Codex CLI unchanged.
+  The Codex App / VS Code extension is **not** claimed as supported — no file is written, and the install
+  summary prints that OpenAI hasn't shipped custom slash commands there (manual copy of the prompt is the
+  only option). The install table now reports honest per-tool statuses (✅ Installed / ⚠️ Manual copy needed).
+
+- **Bare `/guardian` now shows a mode menu (Part C).** `templates/guardian.prompt.md` opens with a mandatory
+  mode-selection block: when invoked without arguments (or when the placeholder wasn't substituted) the agent
+  prints a menu (full loop / `--scan-only` / `--demo` / `--ledger` / `--integrity-only`) and waits; when a
+  flag is present in the invocation arguments it skips the menu and enters that mode directly. The
+  `$ARGUMENTS` placeholder appears exactly once in the template so tool-side substitution can't corrupt the
+  branch conditions (verified live in OpenCode: bare `/guardian` → menu + wait; substituted flag → straight
+  into the mode).
+
 ### Changed
 
 - **All tool spawning migrated from `child_process` shell strings to `execa` (v10).** `src/analyzers/util.ts`
