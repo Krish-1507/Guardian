@@ -23,7 +23,10 @@ src/analyzers/        one file per analyzer (the Phase-1 scan dimension)
   index.ts            runAllAnalyzers() — the registration point
   util.ts             shared helpers (walkFiles, safeExec, commandExists, lineOf, ...)
 src/analyzers/integrity/  diff-scoped AI-agent-cheat detectors (testTamper, exceptionSwallow,
-  suppressionCreep, hardcodedMatch, mockOverreach, exitCheat) — wired into `guardian verify`
+  suppressionCreep, hardcodedMatch, mockOverreach, exitCheat, assertionLiteralTamper) —
+  wired into `guardian verify`
+src/installer/         slash-command install targets (Claude, Cursor, OpenCode, Antigravity,
+  Kilo Code, Codex) + the template transforms (skill / workflow frontmatter rewrites)
 src/graph/correlate.ts   flattens findings into ClusterFinding[] and clusters them
 src/graph/integrity.ts   combines detector output into one verdict (CLEAN/SUSPICIOUS/CONFIRMED_CHEAT)
 src/commands/         the CLI surface (scan, verify, integrity, report, memory, demo, ci, install)
@@ -194,6 +197,7 @@ npm run build
 node dist/cli.js scan .              # scan this repo (a11y/perf will skip — that's correct)
 node dist/cli.js scan demo-repo       # the seeded-broken repo: expect a real cluster
 node dist/cli.js demo                 # full loop rehearsal in a temp dir
+node fixtures/assertion-literal-tamper/verify.mjs  # integrity detector fixture (cheat vs honest)
 ```
 
 For a full-loop test: run `node dist/cli.js demo`, `cd` into the printed temp dir, then walk
