@@ -36,6 +36,10 @@ All notable changes to this project are documented here.
 
 ## [0.2.0] - 2026-08-05
 
+**Published to npm as `cli-guardian@0.2.0`** (verified live: `npx cli-guardian@latest install`
+and `npx cli-guardian@latest demo demo-repo` work from a clean dir against the registry package).
+The npm name `guardian-cli` is owned by an unrelated package and cannot be used.
+
 ### Added
 
 - **New integrity detector `assertionLiteralTamper` (pattern `assertion-expected-value-changed`, confidence
