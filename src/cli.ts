@@ -16,6 +16,9 @@ import { doctor } from "./commands/doctor.js";
 import { prompt } from "./commands/prompt.js";
 import { try_ } from "./commands/try.js";
 import { gate } from "./commands/gate.js";
+import { share } from "./commands/share.js";
+import { digest } from "./commands/digest.js";
+import { honesty } from "./commands/honesty.js";
 
 function readVersion(): string {
   try {
@@ -50,5 +53,8 @@ program.addCommand(doctor);
 program.addCommand(prompt);
 program.addCommand(try_);
 program.addCommand(gate);
+program.addCommand(share);
+program.addCommand(digest);
+program.addCommand(honesty);
 
 program.parseAsync(process.argv);

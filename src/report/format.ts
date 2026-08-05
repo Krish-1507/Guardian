@@ -660,7 +660,7 @@ export function renderMarkdown(model: ReportModel, opts: MarkdownOptions = {}): 
 /* Single-file HTML report                                             */
 /* ------------------------------------------------------------------ */
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -669,7 +669,7 @@ function escapeHtml(s: string): string {
 }
 
 /** Minimal inline-SVG line chart for a metric across scans. */
-function svgTrend(values: (number | null)[], colorHex: string): string {
+export function svgTrend(values: (number | null)[], colorHex: string): string {
   const pts: { i: number; v: number }[] = [];
   values.forEach((v, i) => {
     if (v != null) pts.push({ i, v });

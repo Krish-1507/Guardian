@@ -2,6 +2,36 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.0] - 2026-08-05
+
+### Added (the viral release)
+
+- **`guardian share` — the share card.** One command renders a 1200×630 fully
+  self-contained HTML card (`GUARDIAN_CARD.html`): the big Guardian Score,
+  score-per-scan sparkline, integrity/evidence chips, and the top findings.
+  Built to be screenshotted and posted on X/LinkedIn; `--open` launches it in
+  your browser. No external assets, `og:title`/`twitter:card` meta baked in.
+- **`guardian digest [--days N] [--md]`** — the human progress story. Reads the
+  `.guardian` history and answers "what happened to this repo?": score movement,
+  what got fixed vs regressed, gate results, integrity catches and
+  self-corrections, the flakiest tests, and what's still open. `--md` writes a
+  shareable `GUARDIAN_DIGEST.md`.
+- **`guardian honesty [--html]`** — the AI-honesty proof. One verdict distilled
+  from the evidence chain, the integrity-gate history (cheat catches +
+  self-corrections), the verify delta, and the committed repro tests — the
+  artifact that says "this AI agent's work is provably not cheating".
+  `--html` writes a self-contained `GUARDIAN_HONESTY.html` certificate.
+- **`guardian report --badge-json`** — writes `GUARDIAN_BADGE.json` in the
+  shields.io `endpoint` schema, so the Guardian Score badge can be hosted and
+  embedded as `https://img.shields.io/endpoint?url=<hosted.json>`.
+
+### Changed
+
+- `share`/`honesty`/`digest` verify the baseline **evidence signature** and
+  surface `verified` / `tampered` / `untracked` status — a tampered baseline
+  flips the honesty verdict to SUSPICIOUS.
+- Converted format helpers (`escapeHtml`, `svgTrend`) to exports for reuse.
+
 ## [0.6.0] - 2026-08-05
 
 ### Added

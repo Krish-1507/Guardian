@@ -9,7 +9,12 @@ export const report = new Command("report")
   .description("Generate a repository analysis report from scan/verify history")
   .argument("[repo]", "path to the repo to report on", ".")
   .option("--html", "also write a self-contained GUARDIAN_REPORT.html (zero external assets)")
-  .action(async (repoArg: string, options: { html?: boolean }) => {
+  .option(
+    "--badge-json",
+    "also write GUARDIAN_BADGE.json — a shields.io `endpoint`-schema badge you can host " +
+      "(https://img.shields.io/endpoint?url=<hosted.json>)",
+  )
+  .action(async (repoArg: string, options: { html?: boolean; badgeJson?: boolean }) => {
     const repo = path.resolve(repoArg);
     console.log(chalk.cyan(`\nGenerating report for ${repo} ...\n`));
 
@@ -28,6 +33,21 @@ export const report = new Command("report")
         chalk.dim(`\nBadge (README-ready) written to ${badgePath}\n`) +
           chalk.dim(`   embed with: ![Guardian score](GUARDIAN_BADGE.svg)\n`),
       );
+      if (options.badgeJson) {
+        const payload = {
+          schemaVersion: 1,
+          label: "guardian",
+          message: `${sc.score}/100 ${sc.grade}`,
+          color: sc.grade[0] === "A" ? "brightgreen" : sc.grade[0] === "B" ? "green" : sc.grade[0] === "C" ? "yellow" : "red",
+          cacheSeconds: 3600,
+        };
+        const jsonPath = path.join(repo, "GUARDIAN_BADGE.json");
+        fs.writeFileSync(jsonPath, JSON.stringify(payload, null, 2) + "\n");
+        console.log(
+          chalk.dim(`Shield badge JSON written to ${jsonPath}\n`) +
+            chalk.dim(`   host it and use: https://img.shields.io/endpoint?url=<url>/GUARDIAN_BADGE.json\n`),
+        );
+      }
     }
 
     console.log(chalk.dim(`\nReport written to ${mdPath}\n`));
