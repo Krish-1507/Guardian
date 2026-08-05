@@ -52,7 +52,7 @@ Run it yourself in under two minutes:
 git clone https://github.com/Krish-1507/Guardian.git && cd Guardian
 npm install
 npx cli-guardian demo      # copies the intentionally-broken demo repo to a temp dir
-# open that repo in Claude Code / Cursor / OpenCode / Kilo Code / Codex, then:
+# open that repo in Claude Code / Cursor / OpenCode / Kilo Code / Antigravity / Codex CLI, then:
 /guardian                  # a boxed scan summary appears...
 <Enter>                    # ...you confirm once, and watch it loop
 ```
@@ -82,9 +82,9 @@ Guardian is **two pieces glued together**:
 
 2. **Your existing coding agent's own reasoning.** Guardian never edits your code itself.
    The `/guardian` slash-command is a prompt template that drives *your* agent — Claude
-   Code, Cursor, OpenCode, Kilo Code, or Codex — through a disciplined loop: state a
-   hypothesis, make the smallest fix, run `verify`, and re-scan. The agent does the editing;
-   Guardian does the measuring.
+   Code, Cursor, OpenCode, Kilo Code, Antigravity, or Codex CLI — through a disciplined
+   loop: state a hypothesis, make the smallest fix, run `verify`, and re-scan. The agent
+   does the editing; Guardian does the measuring.
 
 That division is the whole point: the engine guarantees the scan/verify numbers are
 deterministic and honest, while the agent's judgment decides what to change and how.
@@ -179,10 +179,14 @@ repo on your machine.
 | OpenCode | project | `.opencode/commands/guardian.md` |
 | OpenCode (legacy) | project | `.opencode/command/guardian.md` |
 | OpenCode | user | `~/.opencode/commands/guardian.md` |
-| Kilo Code | project | `.kilocode/workflows/guardian.md` |
-| Kilo (legacy) | project | `.kilo/commands/guardian.md` |
-| Kilo Code | user | `~/.kilocode/workflows/guardian.md` |
-| Codex | user | `~/.codex/prompts/guardian.md` *(Codex supports prompts at user level only)* |
+| Antigravity | project | `.agent/workflows/guardian.md` |
+| Antigravity (plural variant) | project | `.agents/workflows/guardian.md` *(docs are inconsistent across versions — both are written, one is harmless)* |
+| Kilo Code | project | `.kilo/commands/guardian.md` |
+| Kilo Code (legacy) | project | `.kilocode/workflows/guardian.md` *(auto-migrated to `.kilo/commands/` by the new extension)* |
+| Kilo Code | user | `~/.config/kilo/commands/guardian.md` |
+| Kilo Code (legacy) | user | `~/.kilocode/workflows/guardian.md` |
+| Codex CLI | user | `~/.codex/prompts/guardian.md` *(Codex supports prompts at user level only)* |
+| Codex App / VS Code extension | — | **not supported** — no file is written; the install prints a manual-copy note instead |
 
 Existing files are never overwritten by default — pass `--force` to replace them, or
 `--uninstall` to remove them:
@@ -191,6 +195,24 @@ Existing files are never overwritten by default — pass `--force` to replace th
 npx cli-guardian install --force
 npx cli-guardian install --uninstall
 ```
+
+### What you get when you type `/guardian`
+
+Every tool renders the same template, and it starts with a mode menu when invoked bare:
+
+```
+Guardian modes:
+ (enter) — full autonomous loop (scan, confirm, fix, verify, repeat)
+ --scan-only — scan and report, no fixes
+ --demo — run against Guardian's own seeded demo repo
+ --ledger — payment idempotency fuzzing only
+ --integrity-only — re-check the last commit for cheat patterns, no scanning
+Reply with a mode, or just hit enter for the default full loop.
+```
+
+Invoking `/guardian --demo` (or `--scan-only`, `--ledger`, `--integrity-only`) skips the menu
+and goes straight into that mode. If a tool ever fails to substitute arguments into the
+prompt, Guardian falls back to the menu rather than guessing.
 
 ---
 
@@ -227,7 +249,8 @@ npx cli-guardian install --uninstall
 - **Integrity** — diff-scoped detection of AI-agent-cheat patterns, run automatically on every
   `guardian verify` (and standalone via `guardian integrity`): deleted or loosened tests,
   swallowed exceptions, suppression comments, hardcoded-to-pass values, a mocked module-under-
-  test, and forced `exit(0)` in application code. See [The integrity gate](#the-integrity-gate--a-referee-for-the-referee).
+  test, forced `exit(0)` in application code, and an assertion's expected value being edited
+  to match the buggy output. See [The integrity gate](#the-integrity-gate--a-referee-for-the-referee).
 - **Ledger** *(opt-in, `--ledger`)* — discovers money-moving endpoints (charge/capture/
   payment/transfer/refund/webhook routes and razorpay/stripe/braintree SDK usage), boots the
   app under a sandbox where **every outbound HTTP call is intercepted**, replays real traffic
@@ -318,6 +341,7 @@ a real fix:
 |---|---|---|
 | Whole test file deleted / whole test case removed | `testTamper` | **CONFIRMED_CHEAT** |
 | `process.exit(0)` / `sys.exit(0)` / `os._exit(0)` added in app code | `exitCheat` | **CONFIRMED_CHEAT** |
+| Assertion's expected value edited with nothing else in the diff | `assertionLiteralTamper` | **CONFIRMED_CHEAT** |
 | Test marked skipped / tolerance or equality loosened | `testTamper` | SUSPICIOUS |
 | New `try/catch` that swallows the error | `exceptionSwallow` | SUSPICIOUS |
 | New suppression marker (`eslint-disable`, `ts-ignore`, `noqa`, `@pytest.mark.skip`, …) | `suppressionCreep` | SUSPICIOUS |

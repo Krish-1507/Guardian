@@ -67,8 +67,10 @@ npx cli-guardian demo
 ```
 
 That copies the demo into a temp dir, wires up `/guardian`, and prints where to open it.
-Open it in Claude Code / Cursor / OpenCode / Kilo Code / Codex, type `/guardian`, hit enter,
-and watch the whole loop: scan box → confirm → fix → verify → re-scan → report.
+Open it in Claude Code / Cursor / OpenCode / Kilo Code / Antigravity / Codex CLI, type
+`/guardian`, hit enter, and watch the whole loop: scan box → confirm → fix → verify →
+re-scan → report. Type it bare and it asks which mode you want (`--scan-only`, `--demo`,
+`--ledger`, `--integrity-only`, or the full loop).
 
 The demo source is at [`demo-repo/`](demo-repo/) if you want to read exactly what it plants
 in the code before you watch it get fixed.
