@@ -122,14 +122,15 @@ function runSuite(repo: string): RunResult | null {
 function runJest(repo: string): RunResult | null {
   let cmd: string;
   let args: string[];
-  if (commandExists("jest")) {
+  const local = path.join(repo, "node_modules", "jest", "bin", "jest.js");
+  if (fs.existsSync(local)) {
+    cmd = "node";
+    args = [local];
+  } else if (commandExists("jest")) {
     cmd = "jest";
     args = [];
   } else {
-    const local = path.join(repo, "node_modules", "jest", "bin", "jest.js");
-    if (!fs.existsSync(local)) return null;
-    cmd = "node";
-    args = [local];
+    return null;
   }
   const start = performance.now();
   const r = safeExec(cmd, [...args, "--json"], repo, 180000);
@@ -163,14 +164,15 @@ function runJest(repo: string): RunResult | null {
 function runVitest(repo: string): RunResult | null {
   let cmd: string;
   let args: string[];
-  if (commandExists("vitest")) {
+  const local = path.join(repo, "node_modules", "vitest", "vitest.mjs");
+  if (fs.existsSync(local)) {
+    cmd = "node";
+    args = [local];
+  } else if (commandExists("vitest")) {
     cmd = "vitest";
     args = [];
   } else {
-    const local = path.join(repo, "node_modules", "vitest", "vitest.mjs");
-    if (!fs.existsSync(local)) return null;
-    cmd = "node";
-    args = [local];
+    return null;
   }
   const tmp = path.join(repo, ".guardian", "vitest-reliability.json");
   fs.mkdirSync(path.dirname(tmp), { recursive: true });
