@@ -64,6 +64,10 @@ export function runTestFile(
 ): Promise<RunResult> {
   const framework = detectTestFramework(repo);
   const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv };
+  // jest/vitest resolve test paths against their rootDir (cwd = repo), so a
+  // repo-relative path is required: an absolute path with Windows 8.3 short
+  // segments (e.g. KRISH_~1) does not match rootDir and yields "No tests found".
+  const rel = path.relative(repo, file);
   return new Promise((resolve) => {
     let cmd: string;
     let args: string[];
@@ -75,10 +79,10 @@ export function runTestFile(
         const jestBin = local("node_modules/jest/bin/jest.js");
         if (fs.existsSync(jestBin)) {
           cmd = "node";
-          args = [jestBin, file, "--runInBand", "--runTestsByPath"];
+          args = [jestBin, rel, "--runInBand", "--runTestsByPath"];
         } else {
           cmd = "npx";
-          args = ["jest", file, "--runInBand", "--runTestsByPath"];
+          args = ["jest", rel, "--runInBand", "--runTestsByPath"];
         }
         break;
       }
@@ -86,10 +90,10 @@ export function runTestFile(
         const vitestBin = local("node_modules/vitest/vitest.mjs");
         if (fs.existsSync(vitestBin)) {
           cmd = "node";
-          args = [vitestBin, "run", file, "--reporter=basic"];
+          args = [vitestBin, "run", rel, "--reporter=basic"];
         } else {
           cmd = "npx";
-          args = ["vitest", "run", file, "--reporter=basic"];
+          args = ["vitest", "run", rel, "--reporter=basic"];
         }
         break;
       }

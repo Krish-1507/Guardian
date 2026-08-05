@@ -65,9 +65,9 @@ export function analyzeTests(repo: string): TestsResult {
 }
 
 function jestCommand(repo: string): { cmd: string; args: string[] } {
-  if (commandExists("jest")) return { cmd: "jest", args: [] };
   const localCli = path.join(repo, "node_modules", "jest", "bin", "jest.js");
   if (fs.existsSync(localCli)) return { cmd: "node", args: [localCli] };
+  if (commandExists("jest")) return { cmd: "jest", args: [] };
   return { cmd: "", args: [] };
 }
 
@@ -127,9 +127,9 @@ function runJest(repo: string): TestsResult {
 }
 
 function vitestCommand(repo: string): { cmd: string; args: string[] } {
-  if (commandExists("vitest")) return { cmd: "vitest", args: [] };
   const localCli = path.join(repo, "node_modules", "vitest", "vitest.mjs");
   if (fs.existsSync(localCli)) return { cmd: "node", args: [localCli] };
+  if (commandExists("vitest")) return { cmd: "vitest", args: [] };
   return { cmd: "", args: [] };
 }
 
