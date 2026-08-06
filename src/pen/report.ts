@@ -60,6 +60,14 @@ export function renderPenBox(result: PenResult): string {
   lines.push(
     `${chalk.bold("Confidence")}: ${sum.proven} proven · ${sum.indicated} indicated · ${sum.heuristic} heuristic`,
   );
+  if (result.staticProof) {
+    const p = result.staticProof;
+    lines.push(
+      chalk.dim(
+        `Static findings verified live: ${p.proven} proven · ${p.indicated} indicated · ${p.unproven} unproven · ${p.notTested} not tested`,
+      ),
+    );
+  }
   lines.push("");
 
   const dyn = result.dynamic;
@@ -130,6 +138,13 @@ export function renderPenMarkdown(result: PenResult): string {
   L.push("");
   L.push(`Confidence: **${sum.proven} proven** · ${sum.indicated} indicated · ${sum.heuristic} heuristic`);
   L.push("");
+  if (result.staticProof) {
+    const p = result.staticProof;
+    L.push(
+      `Static findings verified live: **${p.proven} proven** · ${p.indicated} indicated · ${p.unproven} unproven · ${p.notTested} not tested — every pattern finding was either confirmed by a live attack or honestly labeled unproven.`,
+    );
+    L.push("");
+  }
   if (result.dynamicEnabled) {
     L.push(
       `Dynamic: ${result.dynamic.status} — ${result.dynamic.routesProbed} routes, ${result.dynamic.attacks} attacks, boot ${result.dynamic.bootMs}ms, ${result.dynamic.outboundEvents} outbound events.`,
@@ -151,6 +166,19 @@ export function renderPenMarkdown(result: PenResult): string {
     L.push("");
     L.push(f.description);
     L.push("");
+    if (f.runtimeProof) {
+      L.push(
+        `- **Runtime verification**: ${
+          f.runtimeProof === "proven"
+            ? "**PROVEN** by live attack"
+            : f.runtimeProof === "indicated"
+              ? "indicated by live probing"
+              : f.runtimeProof === "unproven"
+                ? "unproven (probed, no signal)"
+                : "not tested"
+        } — ${f.runtimeNote ?? ""}`,
+      );
+    }
     if (f.attack) {
       L.push(`- **Attack**: \`${f.attack.method} ${f.attack.path}${f.attack.payload ? " payload=" + escapeHtml(JSON.stringify(f.attack.payload)).replace(/&lt;/g, "<").replace(/&gt;/g, ">") : ""}\``);
     }
@@ -193,6 +221,7 @@ export function renderPenHtml(result: PenResult): string {
   <p><strong>${escapeHtml(f.title)}</strong></p>
   <p class="loc">${where}</p>
   <p>${escapeHtml(f.description)}</p>
+  ${f.runtimeProof ? `<p class="rt rt-${f.runtimeProof}"><strong>Runtime: ${f.runtimeProof === "proven" ? "PROVEN by live attack" : f.runtimeProof === "indicated" ? "indicated by live probing" : f.runtimeProof === "unproven" ? "unproven (probed, no signal)" : "not tested"}</strong> ${escapeHtml(f.runtimeNote ?? "")}</p>` : ""}
   ${attack}
   ${f.response ? `<p class="resp">HTTP ${f.response.status ?? "—"}${f.response.snippet ? ` · ${escapeHtml(f.response.snippet)}` : ""}</p>` : ""}
   ${evidence}
@@ -232,6 +261,11 @@ export function renderPenHtml(result: PenResult): string {
   .resp { color: #475569; }
   .evidence { color: #b91c1c; }
   .fix { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 10px; }
+  .rt { font-size: 12.5px; padding: 6px 10px; border-radius: 6px; }
+  .rt-proven { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; }
+  .rt-indicated { background: #fef3c7; border: 1px solid #fde68a; color: #92400e; }
+  .rt-unproven { background: #f1f5f9; border: 1px solid #e2e8f0; color: #475569; }
+  .rt-not-tested { background: #f1f5f9; border: 1px solid #e2e8f0; color: #475569; }
 </style>
 </head><body><div class="wrap">
 <header>

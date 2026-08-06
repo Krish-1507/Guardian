@@ -38,8 +38,11 @@ npx cli-guardian pen --fix
 traffic at it: command injection, SSRF, XSS, rate limiting, missing headers.
 For each route it records *proof* — the exact request and the app's response.
 
-- Findings are labeled **proven** (live attack confirmed), **indicated**,
-  or **heuristic** — never oversold.
+- Every finding carries a **runtime-proof verdict** — **proven** (the live
+  attack confirmed it under the sandbox), **indicated**, **unproven**, or
+  **not-tested** — never oversold. The report's summary line says exactly
+  how many static findings were proven live, e.g.
+  `Static findings verified live: 1 proven · 1 indicated · 3 unproven`.
 - `--fix` writes two things:
   - **repro tests** — permanent regression tests that FAIL while the bug is
     live (that's the contract, by design);
@@ -82,7 +85,12 @@ npx cli-guardian verify   # VERIFIED / NOT VERIFIED — no grey
 - `npx cli-guardian honesty` — the evidence report: every number traced to a
   sealed file.
 - `guardian gate` / `guardian ci` — the same contract as a CI gate.
+- `node scripts/cheat-demo.cjs` — the 90-second cheat-catch demo: a scripted
+  arc where a lazy agent focuses the suite on the passing tests (gate blocks,
+  exit 1) then deletes the failing test (gate blocks, exit 2) — the
+  tamper-evident baseline verifies the whole way. Point it at a local build
+  with `GUARDIAN_CLI="node /path/to/dist/cli.js"`.
 - `npx cli-guardian watch` / `ready-check` / `budget` — the token economy
   that keeps the agent loop cheap (reuse sealed baselines, skip waste).
-- `docs/` — this repo's CI runs the patch-validity regression suite on
-  Linux and Windows on every push.
+- `docs/` — this repo's CI runs the patch-validity + evidence regression
+  suites on Linux and Windows on every push.

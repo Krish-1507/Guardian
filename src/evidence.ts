@@ -31,6 +31,7 @@ export function canonicalize(value: unknown): string {
   const parts: string[] = [];
   for (const key of Object.keys(obj).sort()) {
     if (EXCLUDED_KEYS.has(key)) continue;
+    if (obj[key] === undefined) continue; // JSON.stringify drops these on write
     parts.push(JSON.stringify(key) + ":" + canonicalize(obj[key]));
   }
   return "{" + parts.join(",") + "}";

@@ -50,6 +50,18 @@ export interface PenFinding {
   fix?: string;
   /** Set by `--fix` when a deterministic patch was generated. */
   patchFile?: string;
+  /**
+   * Live-attack verdict for a STATIC finding, applied by the runtime-proof
+   * pass after the dynamic phase: "proven" (a canary-class live attack
+   * confirmed it), "indicated" (live probing produced class-level signals
+   * but no canary), "unproven" (probed with no signal — pattern may be a
+   * false positive), "not-tested" (no live probe exists / app did not boot).
+   */
+  runtimeProof?: "proven" | "indicated" | "unproven" | "not-tested";
+  /** Human note explaining the runtime verdict (and the proof it cites). */
+  runtimeNote?: string;
+  /** For runtime-proven static findings: the dynamic attack class that proved it (e.g. "reflected-xss"). */
+  proofType?: string;
 }
 
 export interface PenDynamicSummary {
@@ -70,6 +82,13 @@ export interface PenResult {
   dynamicEnabled: boolean;
   dynamic: PenDynamicSummary;
   packages: string[];
+  /** Runtime verification of static findings (absent when the dynamic phase was skipped). */
+  staticProof?: {
+    proven: number;
+    indicated: number;
+    unproven: number;
+    notTested: number;
+  };
   findings: PenFinding[];
   summary: {
     critical: number;

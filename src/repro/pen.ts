@@ -121,7 +121,7 @@ function secretGuardBody(f: PenFinding, fileRel: string): string[] {
  * Generate (and optionally write) the repro test file for a pen finding.
  */
 export function generatePenRepro(repo: string, f: PenFinding): ReproOutcome {
-  const isDynamic = f.source === "pen-dynamic";
+  const isDynamic = f.source === "pen-dynamic" || (f.runtimeProof === "proven" && !!f.attack);
   const isStaticSecret = f.type === "hardcoded-secret" && f.file;
 
   if (!isDynamic && !isStaticSecret) {
@@ -174,6 +174,9 @@ export function generatePenRepro(repo: string, f: PenFinding): ReproOutcome {
       reason: "dynamic finding carries no recorded attack to replay (evidence missing from pen-latest.json)",
     };
   }
+  // Runtime-proven static findings assert the attack class that proved them
+  // (e.g. a proven xss-sink asserts reflected-xss behavior), not the pattern.
+  const assertFinding = f.proofType ? { ...f, type: f.proofType } : f;
 
   const bodyLines: string[] = [];
   // The marker lives inside the ORIGINAL attack payload/path (e.g. gpn12345678).
@@ -259,7 +262,7 @@ export function generatePenRepro(repo: string, f: PenFinding): ReproOutcome {
     `  }`,
     `}`,
     ``,
-    `test("guardian repro ${f.id}: ${f.type} blocked on ${attack.path}", async () => {`,
+    `test("guardian repro ${f.id}: ${assertFinding.type} blocked on ${attack.path}", async () => {`,
     `  assert.ok(PRELOAD, "GUARDIAN_PEN_PRELOAD not set — run this via \`npx cli-guardian repro ${f.id}\`");`,
     ``,
     `  const start = resolveStart();`,
@@ -316,8 +319,8 @@ export function generatePenRepro(repo: string, f: PenFinding): ReproOutcome {
   ];
 
   const assertCode = isHammer
-    ? assertionBody(f, marker)
-    : assertionBody(f, marker).map((l) => `    ` + l);
+    ? assertionBody(assertFinding, marker)
+    : assertionBody(assertFinding, marker).map((l) => `    ` + l);
 
   // header for the test file
   const headerLines = [

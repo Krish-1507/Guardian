@@ -118,7 +118,10 @@ was built and deleted.
   exits 2 on confirmed tampering. Trusting a referee is only sound if the
   referee can't be edited. (The first integrity check was a shell script;
   it was deleted and rebuilt in TypeScript the moment it couldn't prove its
-  own integrity.)
+  own integrity.) The chain survived its own corruption bug in 0.8.x — a
+  canonicalizer that hashed `undefined`-valued keys which `JSON.stringify`
+  drops, so every gate cried "TAMPERED" at baselines it had just written —
+  caught by running the demo, fixed, and regression-tested.
 - **Phase 3 — the loop economics.** `watch`/`ready-check`/`budget`/
   `scan --reuse`: an agent loop that re-runs everything on every iteration
   burns credits and patience; a loop that knows when nothing changed and
@@ -126,10 +129,17 @@ was built and deleted.
   all. This shipped before "prettier reports".
 - **Phase 4 — the last mile of honesty: prove it live.** `pen` boots the
   app under a sandbox and attacks it for real — and only then are findings
-  called **proven**. Each gets a repro test that FAILS on the bug, and
+  called **proven**. Every static finding also carries a runtime-proof
+  verdict (proven / indicated / unproven / not-tested), so nothing is
+  oversold. Each finding gets a repro test that FAILS on the bug, and
   `drive` makes the agent prove FAIL → PASS. `pen --fix` only auto-generates
   patches that are provably safe (pure insertions) and regression-tests that
   every patch passes `git apply`.
+- **The cheat-catch demo.** `scripts/cheat-demo.cjs` is the whole thesis in
+  90 seconds: a lazy agent focuses the suite on the passing tests (gate
+  blocks, exit 1), then deletes the failing test (gate blocks, exit 2) —
+  while the tamper-evident baseline keeps verifying. Deterministic, scripted,
+  safe to run in a live room.
 
 **Deliberately not built** (and why): no cloud/dashboard (the numbers are
 local and auditable — that's the point), no plugin marketplace (the

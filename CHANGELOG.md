@@ -2,6 +2,44 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.3] - 2026-08-06
+
+### Fixed
+
+- **The evidence chain actually verifies now.** `canonicalize` hashed keys
+  whose value was `undefined`, but `JSON.stringify` drops those keys when the
+  sealed document is written — so every scan's stored digest never matched the
+  file on disk, and every gate reported `Evidence: TAMPERED` for baselines it
+  had just written itself. The canonicalizer now matches JSON serialization
+  semantics (undefined-valued keys are omitted), so a fresh scan → gate is
+  `verified`. Regression-tested in `test/evidence.test.ts` (round-trip,
+  tamper, missing, order-independence).
+- **`scripts/cheat-demo.cjs` ACT 3** now force-removes the test file
+  (`git rm -f`), which previously failed silently because ACT 2 leaves local
+  modifications in it — the demo now reliably shows the full
+  SUSPICIOUS (exit 1) → CONFIRMED_CHEAT (exit 2) arc.
+
+### Added
+
+- **`scripts/cheat-demo.cjs` — the 90-second cheat-catch demo.** A fully
+  scripted, deterministic arc on a real repo (`demo-repo-integrity`, a float
+  bug with a failing jest test): ACT 1 scans an honest baseline (1 failed),
+  ACT 2 a lazy "agent" focuses the suite on the passing tests — gate blocks
+  with `SUSPICIOUS` (exit 1) — ACT 3 it deletes the failing test — gate blocks
+  with `CONFIRMED_CHEAT` (exit 2). The tamper-evident baseline verifies on
+  every run. Point `GUARDIAN_CLI` at a build (`node D:/Guardian-cli/dist/cli.js`)
+  or use `npx cli-guardian`.
+- **Runtime-proof verdicts for static pen findings** (`guardian pen`): every
+  static finding now carries a live verdict — `proven` (its proving dynamic
+  attack fired and the canary came back), `indicated` (static rule fired but
+  the dynamic phase couldn't confirm), `unproven` (dynamic phase ran and found
+  no evidence for this rule), or `not-tested`. The box, markdown report and
+  HTML report all render a per-finding runtime note plus a summary line
+  ("Static findings verified live: 1 proven · 1 indicated · 3 unproven").
+  Proven static findings also get replayable repro tests via `--fix`, and
+  `guardian repro <id>` asserts the proving dynamic class (fails first, then
+  passes once fixed).
+
 ## [0.8.2] - 2026-08-06
 
 ### Added

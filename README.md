@@ -111,7 +111,7 @@ fix loop never re-hit the registry.
 | `guardian share` | Renders a 1200×630 self-contained share card (`GUARDIAN_CARD.html`) — score, trend, integrity/evidence chips, top findings. Screenshot it and post it. |
 | `guardian digest [--days N] [--md]` | The progress story: score movement, what got fixed/regressed, gate results, cheat catches, flakies, open findings. |
 | `guardian honesty [--html]` | The AI-honesty proof: evidence chain + integrity history + verify delta + committed repro tests → one verdict, or a shareable HTML certificate. |
-| `guardian pen [path] [--fix] [--html] [--json]` | A real penetration test. Static heuristics (secrets, routes, injection/SSRF/XSS rule sets) + a dynamic phase that boots the app under a sandbox which intercepts and records **every** outbound HTTP and spawn. Findings are `PROVEN` only when the sandbox evidence contains the attack canary (SSRF receipt, spawn with the payload marker, reflected marker) — everything else is honestly `indicated`. Nothing reaches the real network; raw sockets are blocked. `--fix` writes failing-then-passing repro tests + `git apply`-able patches. Exit: 0 = clean, 1 = high/critical found, 2 = aborted. |
+| `guardian pen [path] [--fix] [--html] [--json]` | A real penetration test. Static heuristics (secrets, routes, injection/SSRF/XSS rule sets) + a dynamic phase that boots the app under a sandbox which intercepts and records **every** outbound HTTP and spawn. Findings are `PROVEN` only when the sandbox evidence contains the attack canary (SSRF receipt, spawn with the payload marker, reflected marker) — everything else is honestly `indicated`. Nothing reaches the real network; raw sockets are blocked. Every static finding also gets a **runtime-proof verdict**: `proven` (its proving dynamic attack fired live), `indicated` (static rule fired, dynamic phase couldn't confirm), `unproven` (dynamic phase ran and found no evidence for that rule), or `not-tested`. `--fix` writes failing-then-passing repro tests + `git apply`-able patches. Exit: 0 = clean, 1 = high/critical found, 2 = aborted. |
 | `guardian inspect <pen-id>` | Deep-dives pen findings too: the exact attack fired, the observed response, the sandbox evidence lines, the fix, and the repro. |
 | `guardian repro <pen-id>` | Records a pen finding as a regression test that boots the app under the sandbox itself — fails now, must pass after the fix. |
 | `guardian ready-check [path]` | The "is it worth scanning again?" gate: unchanged tree → exit 0, reuse the baseline; something changed → exit 1. |
@@ -172,12 +172,22 @@ the run (`exit 77`); nothing ever reaches a real gateway.
 ### Integrity gate
 
 Every `guardian verify` also diffs your change against HEAD and scans it for agent-cheat
-patterns: deleted or loosened tests, swallowed exceptions, suppression comments,
-hardcoded-to-pass values, a mocked module-under-test, forced `exit(0)` in app code, and an
-assertion's expected value edited to match the buggy output. A caught cheat looks like
-this: change `assert.equal(round2(8.075), 8.08)` to expect `8.07` with nothing else in the
-diff → `CONFIRMED_CHEAT`, the change is blocked, and a human reviews it (verified against
-`fixtures/assertion-literal-tamper/`). An honest app-side fix sails through `CLEAN`.
+patterns: deleted or loosened tests, tests focused to hide failures (`fit`/`test.only`),
+swallowed exceptions, suppression comments, hardcoded-to-pass values, a mocked
+module-under-test, forced `exit(0)` in app code, and an assertion's expected value edited
+to match the buggy output. A caught cheat looks like this: change `assert.equal(round2(8.075), 8.08)`
+to expect `8.07` with nothing else in the diff → `CONFIRMED_CHEAT`, the change is blocked,
+and a human reviews it (verified against `fixtures/assertion-literal-tamper/`). An honest
+app-side fix sails through `CLEAN`.
+
+### Cheat-catch demo
+
+Want to *see* it? `scripts/cheat-demo.cjs` runs a fully scripted, deterministic
+SUSPICIOUS → CONFIRMED_CHEAT arc against a real repo with a real failing jest test:
+a lazy agent first focuses the suite on the passing tests (gate blocks, exit 1), then
+deletes the failing test (gate blocks, exit 2 — with the tamper-evident baseline still
+verifying). Point it at a build with `GUARDIAN_CLI="node /path/to/dist/cli.js"`, or let it
+use `npx cli-guardian`. Great for a video or a live judge's demo.
 
 ## Architecture
 
@@ -201,16 +211,17 @@ cheat its own referee. That separation is the product.
   installed locally. The scan reports `skipped` for those categories and works fine without
   them.
 - Requires **Node.js 22+** (the CLI depends on execa 10, which uses ES2024 `Set.union`).
-- **Pen-test honesty:** `guardian pen` reports each finding as **proven** (live attack
-  confirmed under the sandbox), **indicated** (attack produced strong but not fully
-  confirming evidence), or **heuristic** (static pattern, no runtime evidence). Proven
-  findings are real; indicated/heuristic ones are hypotheses until you replay the attack
-  yourself. The sandbox records outbound connections and spawned processes instead of
-  blocking them (so real bytes never leave your machine for canaries, but a compromised
-  app could still run commands locally); raw socket APIs are blocked outright.
-  `pen --fix` writes deterministic patches **only** for findings fixable by pure insertion
-  (e.g. missing `helmet()`, `x-powered-by` leaks) — anything else gets a failing repro test
-  and fix guidance, which is your contract for the fix.
+- **Pen-test honesty:** `guardian pen` reports each finding with a **runtime-proof
+  verdict**: **proven** (the live dynamic attack confirmed it under the sandbox),
+  **indicated** (static rule fired but the dynamic phase couldn't confirm), **unproven**
+  (the dynamic phase ran and found no evidence for that rule), or **not-tested** (dynamic
+  phase aborted). Proven findings are real; everything else is a hypothesis until you
+  replay the attack yourself. The sandbox records outbound connections and spawned
+  processes instead of blocking them (so real bytes never leave your machine for canaries,
+  but a compromised app could still run commands locally); raw socket APIs are blocked
+  outright. `pen --fix` writes deterministic patches **only** for findings fixable by pure
+  insertion (e.g. missing `helmet()`, `x-powered-by` leaks) — anything else gets a failing
+  repro test and fix guidance, which is your contract for the fix.
 - **`drive` verdicts** for runtime pen findings come from the repro test (FAIL first, PASS
   after the fix), not from the static score — the static gate has nothing to say about a
   runtime-only finding.

@@ -4,6 +4,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { analyzeStatic } from "../pen/static.js";
 import { runDynamic } from "../pen/dynamic.js";
+import { applyStaticProof } from "../pen/proof.js";
 import { persistPen } from "../pen/store.js";
 import { runFixes } from "../pen/fix.js";
 import { renderPenBox, renderPenMarkdown, renderPenHtml } from "../pen/report.js";
@@ -28,9 +29,10 @@ export async function runPen(repo: string, opts: PenOptions): Promise<PenResult>
   const staticOutcome = analyzeStatic(repo);
   const staticMs = Date.now() - staticStart;
 
-  const findings: PenFinding[] = [...staticOutcome.findings];
+  const staticFindings: PenFinding[] = [...staticOutcome.findings];
 
   let dynamicEnabled = !opts.staticOnly;
+  let staticProof: PenResult["staticProof"] | undefined;
   let dynamic: PenResult["dynamic"] = {
     status: "ok",
     note: undefined,
@@ -41,6 +43,7 @@ export async function runPen(repo: string, opts: PenOptions): Promise<PenResult>
     outboundEvents: 0,
   };
 
+  const findings: PenFinding[] = [];
   if (dynamicEnabled) {
     const spin = createSpinner(
       `Booting the app under the pen sandbox and attacking ${staticOutcome.routes.length} route(s)…`,
@@ -52,7 +55,9 @@ export async function runPen(repo: string, opts: PenOptions): Promise<PenResult>
       } else {
         spin.succeed(`Dynamic phase done — ${d.routesProbed} routes, ${d.attacks} attacks`);
       }
-      findings.push(...d.findings);
+      const proof = applyStaticProof(staticFindings, d);
+      findings.push(...proof.findings, ...d.findings);
+      staticProof = proof.summary;
       dynamic = {
         status: d.status,
         note: d.note,
@@ -64,6 +69,10 @@ export async function runPen(repo: string, opts: PenOptions): Promise<PenResult>
       };
     } catch (err: any) {
       spin.fail("Dynamic phase failed");
+      const d = { status: "aborted" as const, note: (err as Error).message, findings: [] };
+      const proof = applyStaticProof(staticFindings, d);
+      findings.push(...proof.findings);
+      staticProof = proof.summary;
       dynamic = {
         status: "aborted",
         note: (err as Error).message,
@@ -74,6 +83,8 @@ export async function runPen(repo: string, opts: PenOptions): Promise<PenResult>
         outboundEvents: 0,
       };
     }
+  } else {
+    findings.push(...staticFindings);
   }
 
   return {
@@ -83,6 +94,7 @@ export async function runPen(repo: string, opts: PenOptions): Promise<PenResult>
     staticEnabled: true,
     dynamicEnabled,
     dynamic,
+    staticProof,
     packages: staticOutcome.packages,
     findings,
     summary: summarizeFindings(findings),
