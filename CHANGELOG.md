@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **README demo GIF + video.** `docs/media/guardian-demo.gif` (780px, ~34 s)
+  and `docs/media/guardian-demo.mp4` (1080p, ~34 s) — the cheat-catch demo
+  captured from the tool's real output (npm-install dead time trimmed), now
+  embedded in the README's "See it in 90 seconds" section.
+
 ### Changed
 
 - **README voice.** The README now opens with **"Why I built this"** — a

@@ -55,8 +55,13 @@ ACT 3  agent deletes the test       →  GATE: CONFIRMED_CHEAT (exit 2) — bloc
        (tamper-evident evidence chain verifies the whole way)
 ```
 
+<p align="center">
+  <img src="docs/media/guardian-demo.gif" alt="The scripted cheat-catch demo: a lazy agent focuses the tests (SUSPICIOUS, exit 1), then deletes the failing test (CONFIRMED_CHEAT, exit 2) — the gate blocks both, on real output." width="780">
+</p>
+
 Deterministic, safe to run in a live room, and it's the whole product in miniature:
 **Guardian measures, your agent edits, and the numbers can't be cheated.**
+(Or watch the [34-second video](docs/media/guardian-demo.mp4).)
 
 Not even 90 seconds? Point it at **your own repo** — zero setup, no install, no config:
 
