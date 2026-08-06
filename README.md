@@ -29,6 +29,114 @@ your agent.
 
 ---
 
+## Feature tour
+
+Every clip below is real command output — the only thing that was trimmed is dead time.
+
+### The scan
+
+`guardian scan` — all analyzers in parallel, one box, one score.
+
+<p align="center">
+  <img src="docs/media/guardian-scan.gif" alt="guardian scan — boxed report with the Guardian Score" width="700">
+</p>
+
+### Verify
+
+`guardian verify` — re-scan, show the Δ, run the anti-cheat gate over your diff.
+
+<p align="center">
+  <img src="docs/media/guardian-verify.gif" alt="guardian verify — the score moves, points don't lie" width="700">
+</p>
+
+### Trends
+
+`guardian trends` — per-category sparklines from your scan history.
+
+<p align="center">
+  <img src="docs/media/guardian-trends.gif" alt="guardian trends — sparklines showing a repo improving" width="700">
+</p>
+
+### Inspect
+
+`guardian inspect <finding-id>` — deep-dive on one finding: snippet, root cause, repro status, memory.
+
+<p align="center">
+  <img src="docs/media/guardian-inspect.gif" alt="guardian inspect — deep-dive on a single finding" width="700">
+</p>
+
+### Repro
+
+`guardian repro <finding-id>` — every fix starts with a failing test. The test is written to fail *now* and pass after the fix.
+
+<p align="center">
+  <img src="docs/media/guardian-repro.gif" alt="guardian repro — a regression test that fails first" width="700">
+</p>
+
+### The pen test
+
+`guardian pen --fix` — boots your app in a sandbox, attacks it, and writes PROVEN verdicts — plus repro tests and a patch.
+
+<p align="center">
+  <img src="docs/media/guardian-pen.gif" alt="guardian pen — runtime-proof findings with repros and a patch" width="700">
+</p>
+
+### Report
+
+`guardian report --html` — a human-readable report, sealed with an evidence signature.
+
+<p align="center">
+  <img src="docs/media/guardian-report.gif" alt="guardian report — HTML report with evidence signature" width="700">
+</p>
+
+### Share
+
+`guardian share` — one-card summary, easy to paste into a PR or a demo chat.
+
+<p align="center">
+  <img src="docs/media/guardian-share.gif" alt="guardian share — a compact shareable summary card" width="700">
+</p>
+
+### Honesty
+
+`guardian honesty --html` — an honest assessment of what this tool can't do.
+
+<p align="center">
+  <img src="docs/media/guardian-honesty.gif" alt="guardian honesty — an honest self-assessment certificate" width="700">
+</p>
+
+### Try it on your repo
+
+`guardian try .` — zero-setup score on any repo in ~2 seconds, with a sealed baseline saved.
+
+<p align="center">
+  <img src="docs/media/guardian-try.gif" alt="guardian try — zero-setup score on any repo" width="700">
+</p>
+
+### The live shield
+
+`guardian watch` — re-scans the moment a file changes and prints the score delta.
+
+<p align="center">
+  <img src="docs/media/guardian-watch.gif" alt="guardian watch — live score delta when a file changes" width="700">
+</p>
+
+The full scripted run is in [`docs/feature-tour.md`](docs/feature-tour.md).
+
+---
+
+## Quick Nav
+
+| Jump to | |
+|---|---|
+| [Feature tour](#feature-tour) — the 11 demos | [Install](#install) · [Usage](#usage) · [Tool support](#tool-support) |
+| [See it in 90 seconds](#see-it-in-90-seconds) | [What Guardian actually does](#what-guardian-actually-does) · [Every command](#every-command) |
+| [Architecture](#architecture) | [Known limitations](#known-limitations) · [Contributing](#contributing) · [License](#license) |
+
+**Straight to one feature:** [The scan](#the-scan) · [Verify](#verify) · [Trends](#trends) · [Inspect](#inspect) · [Repro](#repro) · [The pen test](#the-pen-test) · [Report](#report) · [Share](#share) · [Honesty](#honesty) · [Try it on your repo](#try-it-on-your-repo) · [The live shield](#the-live-shield)
+
+---
+
 ## See it in 90 seconds
 
 Two commands. First, a real broken repo — scanned, scored and reported in seconds:
@@ -297,100 +405,6 @@ is `scripts/cheat-demo.cjs` — a fully deterministic SUSPICIOUS → CONFIRMED_C
 sequence against a real repo with a real failing jest test. Point it at a build with
 `GUARDIAN_CLI="node /path/to/dist/cli.js"`, or let it use `npx cli-guardian`. Great for a
 video or a live judge's demo.
-
-## Feature tour
-
-Every clip below is real command output — the only thing that was trimmed is dead time.
-
-### The scan
-
-`guardian scan` — all analyzers in parallel, one box, one score.
-
-<p align="center">
-  <img src="docs/media/guardian-scan.gif" alt="guardian scan — boxed report with the Guardian Score" width="700">
-</p>
-
-### Verify
-
-`guardian verify` — re-scan, show the Δ, run the anti-cheat gate over your diff.
-
-<p align="center">
-  <img src="docs/media/guardian-verify.gif" alt="guardian verify — the score moves, points don't lie" width="700">
-</p>
-
-### Trends
-
-`guardian trends` — per-category sparklines from your scan history.
-
-<p align="center">
-  <img src="docs/media/guardian-trends.gif" alt="guardian trends — sparklines showing a repo improving" width="700">
-</p>
-
-### Inspect
-
-`guardian inspect <finding-id>` — deep-dive on one finding: snippet, root cause, repro status, memory.
-
-<p align="center">
-  <img src="docs/media/guardian-inspect.gif" alt="guardian inspect — deep-dive on a single finding" width="700">
-</p>
-
-### Repro
-
-`guardian repro <finding-id>` — every fix starts with a failing test. The test is written to fail *now* and pass after the fix.
-
-<p align="center">
-  <img src="docs/media/guardian-repro.gif" alt="guardian repro — a regression test that fails first" width="700">
-</p>
-
-### The pen test
-
-`guardian pen --fix` — boots your app in a sandbox, attacks it, and writes PROVEN verdicts — plus repro tests and a patch.
-
-<p align="center">
-  <img src="docs/media/guardian-pen.gif" alt="guardian pen — runtime-proof findings with repros and a patch" width="700">
-</p>
-
-### Report
-
-`guardian report --html` — a human-readable report, sealed with an evidence signature.
-
-<p align="center">
-  <img src="docs/media/guardian-report.gif" alt="guardian report — HTML report with evidence signature" width="700">
-</p>
-
-### Share
-
-`guardian share` — one-card summary, easy to paste into a PR or a demo chat.
-
-<p align="center">
-  <img src="docs/media/guardian-share.gif" alt="guardian share — a compact shareable summary card" width="700">
-</p>
-
-### Honesty
-
-`guardian honesty --html` — an honest assessment of what this tool can't do.
-
-<p align="center">
-  <img src="docs/media/guardian-honesty.gif" alt="guardian honesty — an honest self-assessment certificate" width="700">
-</p>
-
-### Try it on your repo
-
-`guardian try .` — zero-setup score on any repo in ~2 seconds, with a sealed baseline saved.
-
-<p align="center">
-  <img src="docs/media/guardian-try.gif" alt="guardian try — zero-setup score on any repo" width="700">
-</p>
-
-### The live shield
-
-`guardian watch` — re-scans the moment a file changes and prints the score delta.
-
-<p align="center">
-  <img src="docs/media/guardian-watch.gif" alt="guardian watch — live score delta when a file changes" width="700">
-</p>
-
-The full scripted run is in [`docs/feature-tour.md`](docs/feature-tour.md).
 
 ## Architecture
 
