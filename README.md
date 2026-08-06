@@ -146,14 +146,9 @@ Legacy/alternate locations are also written where tool docs are inconsistent acr
 
 ### The loop at a glance
 
-```
-scan ──► report ──► you confirm ──► repro (must FAIL first) ──► fix ──► verify ──► repeat
- │                                  │                           │        │
- │   deterministic analyzers,       │   captures the bug as a   │   repro PASS +
- │   sealed evidence, one score     │   permanent regression     │   anti-cheat gate
- └──────────────────────────────────┴───────────────────────────┴────────┘
-                    stops only when a fresh scan shows zero clusters
-```
+<p align="center">
+  <img src="docs/media/guardian-loop.png" alt="Guardian's autonomous loop: scan → report → you confirm → repro (must FAIL first) → fix → verify → repeat until a fresh scan shows zero clusters" width="900">
+</p>
 
 The loop runs **inside your AI coding tool** via `/guardian`. Guardian never edits your
 code — it measures, gates and explains; your agent does the editing under the threat of
