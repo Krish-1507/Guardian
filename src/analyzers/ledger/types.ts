@@ -34,9 +34,3 @@ export interface HarnessResult {
   /** True when the app reported a safety abort (uninterceptable traffic detected). */
   aborted: boolean;
 }
-
-/** Normalized command for a repo's start script. */
-export interface StartCommand {
-  cmd: string;
-  args: string[];
-}

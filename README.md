@@ -395,6 +395,16 @@ charge per idempotency key, that's a **proven double-charge** — not a guess. T
 webhook endpoints have no idempotency guard. If the sandbox can't intercept some traffic,
 the run aborts (`exit 77`); nothing ever reaches a real gateway.
 
+**Which stacks are covered?** Node/JS apps run under the nock preload, which intercepts
+every outbound call in-process. Go, Python, Rust and .NET apps run under a recording
+`HTTP_PROXY` sandbox that answers the known payment-gateway hosts with mocked receipts
+and 502s everything else. Java and Dart are refused (their HTTP clients don't honor
+`HTTP_PROXY`, so interception could not be guaranteed). HTTPS stays blocked (502): without
+a trusted CA the proxy cannot terminate a CONNECT tunnel, so an HTTPS double-charge is
+reported as *indicated*, never *proven*. Native binaries and raw sockets bypass the proxy
+and are not observed. Set `GUARDIAN_START` to override start-command guessing for
+non-Node repos.
+
 ### Integrity gate
 
 Every `guardian verify` also diffs your change against HEAD and checks for the classic
@@ -432,10 +442,18 @@ cheat its own referee. That separation is the product.
 - **Codex App / VS Code extension** isn't supported and won't be until OpenAI ships custom
   slash commands; use Codex CLI for `/guardian`.
 - **Graceful degradation:** duplication (`jscpd`), secrets/code scanning (`gitleaks`,
-  `semgrep`), and accessibility runtime checks (`pa11y`/`axe`) run only when that tool is
-  installed locally. The scan reports `skipped` for those categories and works fine without
-  them.
+  `semgrep`), dependency CVEs (`pip-audit`, `osv-scanner`), and accessibility runtime
+  checks (`pa11y`/`axe`) run only when that tool is installed locally. The scan reports
+  `skipped` for those categories and works fine without them.
 - Requires **Node.js 22+** (the CLI depends on execa 10, which uses ES2024 `Set.union`).
+- **Multi-stack honesty:** test runs (JS, Python, Go, Rust, Flutter, .NET, Java via Maven
+  or Gradle), dependency CVEs, and the `pen`/`ledger` sandboxes are real for Node/JS and
+  best-effort elsewhere. Go/Rust/Python/.NET apps run under the `HTTP_PROXY` recording
+  sandbox (see Ledger mode); Java and Dart are refused for ledger, and proxy-mode results
+  are labelled `indicated`, never `proven`, when the proxy cannot observe the traffic. The
+  native test runners parse each toolchain's real output (`go test -json`, `cargo test
+  --format json`, `flutter test --machine`, dotnet/maven/gradle summaries) and report
+  `skipped` when a toolchain isn't on PATH.
 - **Pen-test honesty:** `guardian pen` reports each finding with a **runtime-proof
   verdict**: **proven** (the live dynamic attack confirmed it under the sandbox),
   **indicated** (static rule fired but the dynamic phase couldn't confirm), **unproven**

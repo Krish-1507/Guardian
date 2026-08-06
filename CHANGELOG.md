@@ -15,6 +15,42 @@ All notable changes to this project are documented here.
   captured from real command output, each embedded in its own "Feature tour"
   section with a one-line caption. Full scripted run lives in
   `docs/feature-tour.md`.
+- **Cross-stack support (Go, Rust, Dart, .NET, Java).** `detectLanguage` now recognizes
+  go.mod / Cargo.toml / pubspec.yaml / .csproj / pom.xml / build.gradle repos, and every
+  analyzer that was Node/Python-only now has a real path for the new stacks:
+  - **`guardian scan` runs native test suites** through a new shared runner
+    (`src/analyzers/suiteRunner.ts`) that parses each toolchain's real output — `go test
+    -json`, `cargo test --format json` (Rust ≥1.70), `flutter test --machine`, dotnet
+    test summaries, Maven surefire and Gradle test-result XML. Missing toolchains report
+    `skipped` with an honest note; unparseable output is an error, never a guess.
+  - **`guardian scan --security`** falls back to **osv-scanner** (cached per lockfile-set
+    in `.guardian/cache/`) when the tool isn't pip-audit or Node's audit — one
+    vulnerability path for every language.
+  - **Reliability runs and perf guard** (`.guardian/cache/reliability-*.json`) work for
+    the new stacks: builds via `go build ./...`, `cargo build`, `flutter build web`,
+    `dotnet build`, `mvn package -DskipTests` / `gradle assemble`.
+  - **`guardian repro`** knows the new frameworks (`go`, `cargo`, `flutter`, `dotnet`,
+    `maven`, `gradle`), places tests in the right directory per stack
+    (`_test.go`, `test/`, `tests/`), and **refuses honestly** to generate non-perf
+    repros for stacks without a proven native recipe (the old behavior silently produced
+    un-runnable Node tests).
+- **`guardian pen` + `--ledger` proxy sandbox for non-Node apps.** A recording
+  `HTTP_PROXY` (`src/sandbox/proxy.ts`) replaces the nock preload for Go/Python/Rust/.NET
+  apps: known payment-gateway hosts get mocked success receipts written to the same
+  gateway JSONL contract (evidence stays sealed and unchanged), SSRF canaries answer
+  in-band, every other outbound host is blocked (502) and recorded — no byte leaves the
+  machine. HTTPS is refused (502 CONNECT) with an honest `indicated` ceiling, and
+  command-injection in proxy mode is reported `indicated` (the proxy cannot observe
+  spawns). Java/Dart are refused for ledger (their clients ignore `HTTP_PROXY`).
+  `GUARDIAN_START` overrides native start-command guessing (`manage.py`, `go run .`,
+  `cargo run`, `dotnet run`, `mvn spring-boot:run`, gradle `bootRun`).
+- **Multi-language route discovery.** `src/analyzers/routes.ts` finds routes in JS,
+  Python, Go (gin/echo/chi/gorilla/net-http), Rust (axum/actix), Java (Spring), C#
+  (ASP.NET) and Dart (shelf), now shared by `guardian pen`'s static/dynamic phases and
+  ledger mode's endpoint discovery.
+- **Unit tests for the new modules** (`test/proxy.test.ts`, `test/routes.test.ts`):
+  canary/blocked/gateway/loopback/CONNECT proxy behaviour over real sockets, and the
+  route matchers per language.
 
 ### Changed
 

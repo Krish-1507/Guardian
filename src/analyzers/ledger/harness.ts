@@ -1,34 +1,19 @@
-import { execa, type Subprocess } from "execa";
+import { execa } from "execa";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import crypto from "node:crypto";
 import net from "node:net";
 import { detectLanguage } from "../util.js";
-import type { Harness, HarnessResult, StartCommand } from "./types.js";
+import { startRecordingProxy, type RecordingProxy } from "../../sandbox/proxy.js";
+import {
+  isNodeCommand,
+  resolveNativeStart,
+  resolveNodeStart,
+  type StartCommand,
+} from "../../sandbox/startCmd.js";
+import type { Harness, HarnessResult } from "./types.js";
 
 const STARTUP_TIMEOUT_MS = 25_000;
-
-const NODE_BASED = new Set([
-  "node",
-  "node.exe",
-  "nodejs",
-  "npm",
-  "npm.cmd",
-  "npx",
-  "npx.cmd",
-  "yarn",
-  "yarn.cmd",
-  "pnpm",
-  "pnpm.cmd",
-  "tsx",
-  "ts-node",
-  "babel-node",
-  "ojs",
-  "vitest",
-  "jest",
-]);
 
 /** Absolute path of the nock sandbox preload that ships with the package. */
 function preloadPath(): string {
@@ -47,27 +32,6 @@ function freePort(): Promise<number> {
       s.close(() => resolve(p));
     });
   });
-}
-
-function resolveStart(repo: string): StartCommand {
-  const pkgPath = path.join(repo, "package.json");
-  if (!fs.existsSync(pkgPath)) {
-    throw new Error("no package.json — a start script is required for --ledger");
-  }
-  const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-  const start = (pkg.scripts && pkg.scripts.start) || "";
-  if (!start) {
-    throw new Error("no `start` script in package.json — --ledger needs one");
-  }
-  const tokens = start.trim().split(/\s+/);
-  const cmd = tokens[0] || "";
-  if (!NODE_BASED.has(cmd)) {
-    throw new Error(
-      `start script runs "${cmd}", which is not a Node-based runtime — ` +
-        "outbound HTTP from it cannot be guaranteed to be intercepted; refusing to run ledger mode",
-    );
-  }
-  return { cmd, args: tokens.slice(1) };
 }
 
 async function waitForServer(
@@ -123,24 +87,26 @@ export async function startHarness(
   repo: string,
   gatewayHosts: string[],
 ): Promise<HarnessResult> {
-  if (detectLanguage(repo) !== "js") {
+  const lang = detectLanguage(repo);
+  const nodeMode = lang === "js";
+
+  // Java/Dart clients do not honor HTTP_PROXY by default — a proxy sandbox
+  // there cannot claim to intercept gateway traffic, so refuse honestly.
+  if (lang === "unknown") {
+    return {
+      harness: null,
+      aborted: true,
+      abortReason: "could not identify the repo language — refusing to run ledger mode",
+    };
+  }
+  if (!nodeMode && (lang === "java" || lang === "dart")) {
     return {
       harness: null,
       aborted: true,
       abortReason:
-        "--ledger currently supports Node/JS apps only. For another language, " +
-        "outbound HTTP cannot be guaranteed to be intercepted; refusing to run.",
-    };
-  }
-
-  let start: StartCommand;
-  try {
-    start = resolveStart(repo);
-  } catch (e) {
-    return {
-      harness: null,
-      aborted: false,
-      abortReason: (e as Error).message,
+        `--ledger cannot guarantee interception for ${lang} apps: ${lang} HTTP clients do not honor ` +
+        "HTTP_PROXY by default, and the nock preload cannot load into a non-Node process. " +
+        "Run ledger mode on a Node/JS, Go, Python, Rust, or .NET app.",
     };
   }
 
@@ -157,20 +123,68 @@ export async function startHarness(
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
 
-  const preload = preloadPath();
-  if (!fs.existsSync(preload)) {
+  let start: StartCommand | null = null;
+  try {
+    if (nodeMode) {
+      start = resolveNodeStart(repo);
+      if (!isNodeCommand(start.cmd)) {
+        return {
+          harness: null,
+          aborted: true,
+          abortReason:
+            `start script runs "${start.cmd}", which is not a Node-based runtime — ` +
+            "outbound HTTP from it cannot be guaranteed to be intercepted; refusing to run ledger mode",
+        };
+      }
+    } else {
+      start = resolveNativeStart(repo, lang, port);
+    }
+  } catch (e) {
     return {
       harness: null,
-      aborted: true,
-      abortReason: `ledger preload missing at ${preload}; cannot guarantee interception`,
+      aborted: false,
+      abortReason: (e as Error).message,
+    };
+  }
+  if (!start) {
+    return {
+      harness: null,
+      aborted: false,
+      abortReason:
+        `could not determine a start command for a ${lang} repo — set GUARDIAN_START ` +
+        `(e.g. "GUARDIAN_START=uvicorn app.main:app") and re-run`,
     };
   }
 
-  const env: NodeJS.ProcessEnv = {
+  // Non-Node sandbox: HTTP(S)_PROXY recording proxy that mocks the gateway
+  // hosts and writes receipts to the same gateway.log.jsonl contract.
+  let proxy: RecordingProxy | null = null;
+  if (!nodeMode) {
+    try {
+      proxy = await startRecordingProxy({
+        logPath: path.join(runDir, "outbound.jsonl"),
+        controlPath,
+        gatewayLogPath,
+        gatewayHosts,
+        canarySuffix: "guardian.invalid",
+      });
+    } catch (e) {
+      return {
+        harness: null,
+        aborted: true,
+        abortReason: `could not start the recording proxy: ${(e as Error).message}`,
+      };
+    }
+  } else if (!fs.existsSync(preloadPath())) {
+    return {
+      harness: null,
+      aborted: true,
+      abortReason: `ledger preload missing at ${preloadPath()}; cannot guarantee interception`,
+    };
+  }
+
+  const baseEnv: NodeJS.ProcessEnv = {
     ...process.env,
-    NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${preload}`]
-      .filter(Boolean)
-      .join(" "),
     PORT: String(port),
     GUARDIAN_LEDGER_CONTROL: controlPath,
     GUARDIAN_LEDGER_GATEWAY_LOG: gatewayLogPath,
@@ -181,6 +195,22 @@ export async function startHarness(
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || "sk_test_guardian_fake",
     NODE_ENV: process.env.NODE_ENV || "test",
   };
+  const env: NodeJS.ProcessEnv = nodeMode
+    ? {
+        ...baseEnv,
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${preloadPath()}`]
+          .filter(Boolean)
+          .join(" "),
+      }
+    : {
+        ...baseEnv,
+        HTTP_PROXY: `http://127.0.0.1:${proxy!.port}`,
+        HTTPS_PROXY: `http://127.0.0.1:${proxy!.port}`,
+        http_proxy: `http://127.0.0.1:${proxy!.port}`,
+        https_proxy: `http://127.0.0.1:${proxy!.port}`,
+        NO_PROXY: "localhost,127.0.0.1,::1",
+        no_proxy: "localhost,127.0.0.1,::1",
+      };
 
   const child = execa(start.cmd, start.args, {
     cwd: repo,
@@ -224,6 +254,7 @@ export async function startHarness(
     } catch {
       /* ignore */
     }
+    if (proxy) proxy.close().catch(() => {});
     return { harness: null, aborted, abortReason: reason };
   }
 
@@ -240,6 +271,7 @@ export async function startHarness(
           /* ignore */
         }
         fs.closeSync(outFd);
+        if (proxy) proxy.close().catch(() => {});
         resolve();
       }),
   };

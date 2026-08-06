@@ -1,10 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { walkFiles, lineOf } from "../util.js";
+import { walkFiles } from "../util.js";
+import { findRoutesInFile, ROUTE_EXTS, type RouteMatch } from "../routes.js";
 import type { LedgerEndpoint } from "../types.js";
-
-const JS_EXTS = [".js", ".jsx", ".ts", ".tsx"];
-const PY_EXTS = [".py"];
 
 /** Keywords that mark a route as money-moving. */
 const KEYWORDS = [
@@ -26,12 +24,6 @@ const SDK_TO_HOSTS: Record<string, string[]> = {
   braintree: ["https://api.braintreegateway.com"],
 };
 
-interface RouteMatch {
-  method: string;
-  path: string;
-  line: number;
-}
-
 export interface LedgerDiscovery {
   endpoints: LedgerEndpoint[];
   /** Payment SDKs imported anywhere in the repo. */
@@ -47,14 +39,12 @@ export interface LedgerDiscovery {
  * shape. This NEVER runs the app and never touches the network.
  */
 export function discover(repo: string): LedgerDiscovery {
-  const jsFiles = walkFiles(repo, JS_EXTS);
-  const pyFiles = walkFiles(repo, PY_EXTS);
-
   const repoSdkImports = new Set<string>();
   const endpoints: LedgerEndpoint[] = [];
 
-  for (const file of jsFiles) safeScanFile(repo, file, false, repoSdkImports, endpoints);
-  for (const file of pyFiles) safeScanFile(repo, file, true, repoSdkImports, endpoints);
+  for (const file of walkFiles(repo, ROUTE_EXTS)) {
+    safeScanFile(repo, file, repoSdkImports, endpoints);
+  }
 
   // Keep only money-moving candidates.
   const money = endpoints.filter((e) =>
@@ -77,7 +67,6 @@ export function discover(repo: string): LedgerDiscovery {
 function safeScanFile(
   repo: string,
   file: string,
-  isPython: boolean,
   repoSdkImports: Set<string>,
   out: LedgerEndpoint[],
 ): void {
@@ -91,13 +80,29 @@ function safeScanFile(
   const sdkImports = detectSdkImports(content);
   for (const s of sdkImports) repoSdkImports.add(s);
 
-  const routes = isPython ? findPythonRoutes(content) : findJsRoutes(content);
+  const routes = findRoutesInFile(content, path.extname(file).toLowerCase());
   for (const r of routes) {
     const kw = KEYWORDS.find((k) => r.path.toLowerCase().includes(k))
       ?? keywordFromContext(content, r);
     if (!kw) continue;
     const rel = path.relative(repo, file);
-    out.push(buildEndpoint(r, file, rel, sdkImports, kw, isPython, content));
+    out.push(buildEndpoint(r, file, rel, sdkImports, kw, content));
+  }
+}
+
+function frameworkName(ext: string): string {
+  switch (ext) {
+    case ".js":
+    case ".jsx":
+    case ".ts":
+    case ".tsx":
+    case ".mjs":
+    case ".cjs":
+      return "express/fastify";
+    case ".py":
+      return "python";
+    default:
+      return ext.slice(1);
   }
 }
 
@@ -107,7 +112,6 @@ function buildEndpoint(
   relFile: string,
   sdkImports: string[],
   kw: string,
-  isPython: boolean,
   content: string,
 ): LedgerEndpoint {
   const c = content.toLowerCase();
@@ -122,7 +126,7 @@ function buildEndpoint(
     path: r.path,
     file: absFile,
     line: r.line,
-    framework: isPython ? "python" : "express/fastify",
+    framework: frameworkName(path.extname(absFile).toLowerCase()),
     matchedKeyword: kw,
     sdkImports: sdkImports.length ? sdkImports : [],
     expectedPayload: {
@@ -151,44 +155,4 @@ function detectSdkImports(content: string): string[] {
     if (re.test(content)) found.add(sdk);
   }
   return [...found];
-}
-
-/** Express / Fastify route registration. */
-const JS_ROUTE_RE =
-  /(?:^|\s)(?:app|router|route|fastify|server|instance|application)\s*\.\s*(get|post|put|patch|delete|all)\s*\(\s*(['"`])([^'"`]+)\2/g;
-
-function findJsRoutes(content: string): RouteMatch[] {
-  const routes: RouteMatch[] = [];
-  let m: RegExpExecArray | null;
-  JS_ROUTE_RE.lastIndex = 0;
-  while ((m = JS_ROUTE_RE.exec(content)) !== null) {
-    routes.push({
-      method: m[1].toUpperCase(),
-      path: m[3],
-      line: lineOf(content, m.index),
-    });
-  }
-  return routes;
-}
-
-/** Flask / Django route registration. */
-const PY_ROUTE_RE =
-  /@\s*[\w.]*\.\s*(route|get|post|put|patch|delete)\s*\(\s*(['"])([^'"]+)\2|\b(?:path|re_path)\s*\(\s*(['"])([^'"]+)\4\s*,\s*\s*views\.([\w]+)/g;
-
-function findPythonRoutes(content: string): RouteMatch[] {
-  const routes: RouteMatch[] = [];
-  let m: RegExpExecArray | null;
-  PY_ROUTE_RE.lastIndex = 0;
-  while ((m = PY_ROUTE_RE.exec(content)) !== null) {
-    if (m[3]) {
-      routes.push({
-        method: m[1] === "route" ? "POST" : m[1].toUpperCase(),
-        path: m[3],
-        line: lineOf(content, m.index),
-      });
-    } else if (m[5]) {
-      routes.push({ method: "POST", path: m[5], line: lineOf(content, m.index) });
-    }
-  }
-  return routes;
 }

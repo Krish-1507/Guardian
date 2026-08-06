@@ -9,7 +9,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { walkFiles, lineOf } from "../analyzers/util.js";
+import { walkFiles } from "../analyzers/util.js";
+import { findRoutesInFile, ROUTE_EXTS } from "../analyzers/routes.js";
 import { findingIdFor } from "../repro/ids.js";
 import type { PenFinding, PenRoute } from "./types.js";
 
@@ -159,12 +160,6 @@ function scanGenericKeys(repo: string): SecretHit[] {
 /* 2. Route inventory (static, for the dynamic phase)                  */
 /* ------------------------------------------------------------------ */
 
-const JS_ROUTE_RE =
-  /(?:^|\s)(?:app|router|route|fastify|server|instance|application)\s*\.\s*(get|post|put|patch|delete|all)\s*\(\s*(['"`])([^'"`]+)\2/g;
-
-const PY_ROUTE_RE =
-  /@\s*[\w.]*\.\s*(route|get|post|put|patch|delete)\s*\(\s*(['"])([^'"]+)\2|\b(?:path|re_path)\s*\(\s*(['"])([^'"]+)\4\s*,\s*\s*views\.([\w]+)/g;
-
 const SENSITIVE_WORDS = [
   "admin",
   "dashboard",
@@ -205,32 +200,15 @@ export function findRoutes(repo: string): PenRoute[] {
       loginLike: LOGIN_WORDS.some((w) => lower.includes(w)),
     });
   };
-  for (const file of walkFiles(repo, JS_EXTS)) {
+  for (const file of walkFiles(repo, ROUTE_EXTS)) {
     let content: string;
     try {
       content = fs.readFileSync(file, "utf8");
     } catch {
       continue;
     }
-    let m: RegExpExecArray | null;
-    JS_ROUTE_RE.lastIndex = 0;
-    while ((m = JS_ROUTE_RE.exec(content)) !== null) {
-      add(file, m[1], m[3], lineOf(content, m.index));
-    }
-  }
-  for (const file of walkFiles(repo, PY_EXTS)) {
-    let content: string;
-    try {
-      content = fs.readFileSync(file, "utf8");
-    } catch {
-      continue;
-    }
-    let m: RegExpExecArray | null;
-    PY_ROUTE_RE.lastIndex = 0;
-    while ((m = PY_ROUTE_RE.exec(content)) !== null) {
-      if (m[3]) add(file, m[1] === "route" ? "POST" : m[1], m[3], lineOf(content, m.index));
-      else if (m[5]) add(file, "POST", m[5], lineOf(content, m.index));
-    }
+    const ext = path.extname(file).toLowerCase();
+    for (const r of findRoutesInFile(content, ext)) add(file, r.method, r.path, r.line);
   }
   return out;
 }

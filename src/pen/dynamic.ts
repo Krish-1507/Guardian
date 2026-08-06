@@ -1,10 +1,17 @@
 /**
  * pen/dynamic.ts — the dynamic phase of `guardian pen`.
  *
- * Boots the app-under-test under the pen sandbox (`templates/pen/preload.cjs`)
- * and fires a battery of live attacks at the discovered routes. Every attack is
- * recorded (method, path, payload, status, response snippet) and its outcome is
- * checked against BOTH the response and the sandbox evidence stream.
+ * Boots the app-under-test under the pen sandbox (`templates/pen/preload.cjs`
+ * for Node/JS) and fires a battery of live attacks at the discovered routes.
+ * Every attack is recorded (method, path, payload, status, response snippet)
+ * and its outcome is checked against BOTH the response and the sandbox
+ * evidence stream.
+ *
+ * Non-Node stacks (Go/Rust/Python/.NET/Java/Dart) are sandboxed with an
+ * HTTP(S)_PROXY recording proxy instead of the nock preload: outbound calls
+ * from apps honoring the proxy are recorded and never forwarded anywhere real.
+ * That proxy cannot observe subprocess spawns, so for those stacks
+ * command-injection is capped at "indicated" (response-echo), never "proven".
  *
  * Honesty rules:
  *   - Attack requests may legitimately crash bits of the app (a 500 is a
@@ -22,6 +29,12 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { detectLanguage } from "../analyzers/util.js";
+import { startRecordingProxy, type RecordingProxy } from "../sandbox/proxy.js";
+import {
+  resolveNativeStart,
+  resolveNodeStart,
+  type StartCommand,
+} from "../sandbox/startCmd.js";
 import { findingIdFor } from "../repro/ids.js";
 import type { PenFinding, PenRoute } from "./types.js";
 
@@ -29,12 +42,6 @@ const STARTUP_TIMEOUT_MS = 25_000;
 const REQUEST_TIMEOUT_MS = 6_000;
 const MAX_ROUTES_PROBED = 40;
 const RATE_LIMIT_HAMMER = 30;
-
-const NODE_BASED = new Set([
-  "node", "node.exe", "nodejs", "npm", "npm.cmd", "npx", "npx.cmd",
-  "yarn", "yarn.cmd", "pnpm", "pnpm.cmd", "tsx", "ts-node", "babel-node",
-  "ojs", "vitest", "jest",
-]);
 
 function preloadPath(): string {
   return fileURLToPath(new URL("../../templates/pen/preload.cjs", import.meta.url));
@@ -50,22 +57,6 @@ function freePort(): Promise<number> {
       s.close(() => resolve(p));
     });
   });
-}
-
-function resolveStart(repo: string): { cmd: string; args: string[] } {
-  const pkgPath = path.join(repo, "package.json");
-  if (!fs.existsSync(pkgPath)) throw new Error("no package.json — pen dynamic needs a `start` script");
-  const start = JSON.parse(fs.readFileSync(pkgPath, "utf8").replace(/^\uFEFF/, ""))?.scripts?.start || "";
-  if (!start) throw new Error("no `start` script in package.json — pen dynamic needs one");
-  const tokens = start.trim().split(/\s+/);
-  const cmd = tokens[0] || "";
-  if (!NODE_BASED.has(cmd)) {
-    throw new Error(
-      `start script runs "${cmd}", which is not a Node-based runtime — outbound HTTP from it ` +
-        "cannot be guaranteed to be intercepted; refusing to run the dynamic phase",
-    );
-  }
-  return { cmd, args: tokens.slice(1) };
 }
 
 function controlHas(controlPath: string, needle: string): boolean {
@@ -307,18 +298,13 @@ export async function runDynamic(repo: string, routes: PenRoute[]): Promise<PenD
     findings: [],
   });
 
-  if (detectLanguage(repo) !== "js") {
+  const lang = detectLanguage(repo);
+  const nodeMode = lang === "js";
+  if (lang === "unknown") {
     return abortWith(
-      "dynamic pen currently supports Node/JS apps only (the sandbox needs node:http + nock). " +
-        "Static pen still ran — see its findings below.",
+      "could not identify the repo language — dynamic pen cannot choose a sandbox; " +
+        "static pen still ran — see its findings below.",
     );
-  }
-
-  let start: { cmd: string; args: string[] };
-  try {
-    start = resolveStart(repo);
-  } catch (e) {
-    return abortWith((e as Error).message);
   }
 
   const workDir = path.join(repo, ".guardian", "pen");
@@ -334,15 +320,39 @@ export async function runDynamic(repo: string, routes: PenRoute[]): Promise<PenD
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
 
-  const preload = preloadPath();
-  if (!fs.existsSync(preload)) {
-    return abortWith(`pen preload missing at ${preload}; cannot guarantee interception`);
+  let start: StartCommand | null = null;
+  try {
+    start = nodeMode ? resolveNodeStart(repo) : resolveNativeStart(repo, lang, port);
+  } catch (e) {
+    return abortWith((e as Error).message);
+  }
+  if (!start) {
+    return abortWith(
+      `could not determine a start command for a ${lang} repo — set GUARDIAN_START ` +
+        `(e.g. "GUARDIAN_START=uvicorn app.main:app") and re-run. Static pen still ran — see its findings below.`,
+    );
+  }
+
+  // Non-Node sandbox: HTTP(S)_PROXY recording proxy. Java/Dart clients do not
+  // honor the proxy by default — outbound evidence there simply never fires,
+  // while response-side findings stay valid.
+  let proxy: RecordingProxy | null = null;
+  if (!nodeMode) {
+    try {
+      proxy = await startRecordingProxy({
+        logPath: outboundPath,
+        controlPath,
+        gatewayHosts: [],
+        canarySuffix: "guardian.invalid",
+      });
+    } catch (e) {
+      return abortWith(`could not start the recording proxy: ${(e as Error).message}`);
+    }
   }
 
   const bootStart = Date.now();
-  const env: NodeJS.ProcessEnv = {
+  const baseEnv: NodeJS.ProcessEnv = {
     ...process.env,
-    NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${preload}`].filter(Boolean).join(" "),
     PORT: String(port),
     GUARDIAN_PEN_CONTROL: controlPath,
     GUARDIAN_PEN_OUTBOUND: outboundPath,
@@ -351,6 +361,22 @@ export async function runDynamic(repo: string, routes: PenRoute[]): Promise<PenD
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || "sk_test_guardian_fake",
     NODE_ENV: process.env.NODE_ENV || "test",
   };
+  const env: NodeJS.ProcessEnv = nodeMode
+    ? {
+        ...baseEnv,
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${preloadPath()}`]
+          .filter(Boolean)
+          .join(" "),
+      }
+    : {
+        ...baseEnv,
+        HTTP_PROXY: `http://127.0.0.1:${proxy!.port}`,
+        HTTPS_PROXY: `http://127.0.0.1:${proxy!.port}`,
+        http_proxy: `http://127.0.0.1:${proxy!.port}`,
+        https_proxy: `http://127.0.0.1:${proxy!.port}`,
+        NO_PROXY: "localhost,127.0.0.1,::1",
+        no_proxy: "localhost,127.0.0.1,::1",
+      };
 
   const child = execa(start.cmd, start.args, {
     cwd: repo,
@@ -388,6 +414,11 @@ export async function runDynamic(repo: string, routes: PenRoute[]): Promise<PenD
       fs.closeSync(outFd);
     } catch {
       /* ignore */
+    }
+    if (proxy) {
+      proxy.close().catch(() => {
+        /* ignore */
+      });
     }
   };
 
@@ -507,7 +538,7 @@ export async function runDynamic(repo: string, routes: PenRoute[]): Promise<PenD
             severity: "high",
             confidence: "proven",
             title: `server-side request forgery via ${routeLabel}`,
-            description: `A ${atk.origin} "url/webhook/callback"-style field made the SERVER open a connection to ${canaryHost} (recorded by the sandbox — no real byte left the machine). Response: HTTP ${res.status}.`,
+            description: `A ${atk.origin} "url/webhook/callback"-style field made the SERVER open a connection to ${canaryHost} (recorded by ${nodeMode ? "the sandbox" : "the recording proxy"} — no real byte left the machine). Response: HTTP ${res.status}.`,
             route: route.path,
             method: route.method,
             attack: { method: atk.method, path: p, payload: atk.body ? atk.body(marker, canaryUrl) : undefined },
@@ -531,6 +562,27 @@ export async function runDynamic(repo: string, routes: PenRoute[]): Promise<PenD
             response: { status: res.status, snippet: res.snippet },
             outbound: cmdProof.slice(0, 2).map((e) => `spawn: ${e.cmd}`),
             repro: `GET/POST with e.g. ?cmd=;echo ${marker}; — the server spawns the command.`,
+            fix: "Never shell out with request data. Use execFile with a fixed command and no shell; validate input against a strict allowlist.",
+          });
+        } else if (
+          !nodeMode &&
+          atk.tag === "cmd" &&
+          res.status < 300 &&
+          res.text.includes(marker)
+        ) {
+          // The recording proxy cannot observe subprocess spawns, so an echoed
+          // marker is the strongest evidence it can give: indicated, never proven.
+          pushFinding({
+            type: "command-injection",
+            severity: "critical",
+            confidence: "indicated",
+            title: `command payload echoed on ${routeLabel}`,
+            description: `A "cmd"-style payload's marker (${marker}) came back in the HTTP ${res.status} response. The value reached a shell/exec path — but the HTTP proxy cannot observe spawns, so this is indicated, not proven (a pure echo endpoint could also reflect it).`,
+            route: route.path,
+            method: route.method,
+            attack: { method: atk.method, path: p, payload: atk.body ? atk.body(marker, canaryUrl) : undefined },
+            response: { status: res.status, snippet: res.snippet },
+            repro: `GET/POST with e.g. ?cmd=;echo ${marker}; — the marker appears in the response body.`,
             fix: "Never shell out with request data. Use execFile with a fixed command and no shell; validate input against a strict allowlist.",
           });
         }
@@ -628,6 +680,10 @@ export async function runDynamic(repo: string, routes: PenRoute[]): Promise<PenD
     close();
     return {
       status: "ok",
+      note: nodeMode
+        ? undefined
+        : `HTTP(S)_PROXY recording sandbox (${lang}) — only apps whose HTTP clients honor the proxy are intercepted; ` +
+          "native binaries/raw sockets are not; command-injection is capped at 'indicated'; https outbound is blocked (502).",
       routesProbed,
       attacks,
       bootMs,
