@@ -106,6 +106,10 @@ fix loop never re-hit the registry.
 | `guardian prompt [--args …]` | Prints the exact `/guardian` prompt your AI tool expands to, with your arguments substituted — full transparency into what the agent was told. |
 | `guardian try [path]` | Zero-setup 2-second Guardian Score on **any existing repo** — no install, no tool config; static pass only, and it saves a sealed baseline so scan/verify/gate build on it. |
 | `guardian gate [--score 60]` | Agentless commit gate for CI/pre-commit: score threshold + regression risk + integrity diff + evidence signature. Exit 0 = PASS, 1 = FAIL, 2 = CONFIRMED_CHEAT. |
+| `guardian ci [path]` | CI-mode scan: runs scan + verify against the base branch and prints a PR-ready markdown report — the gate as a PR comment. Diagnostic only; fixes stay local via `/guardian`. |
+| `guardian integrity [path]` | Re-checks the last commit / working tree for AI-agent-cheat patterns *without* scanning: deleted or neutered tests, swallowed errors, suppression comments, hardcoded-to-pass values, mocked SUT, forced exits. Writes `.guardian/integrity-<timestamp>.json`. Exit 0 = CLEAN, 1 = SUSPICIOUS, 2 = CONFIRMED_CHEAT. |
+| `guardian demo [demo]` | Scaffolds an intentionally-broken demo repo into a fresh temp dir (default `demo-repo`, or `demo-repo-integrity` / `demo-repo-fintech` / `demo-repo-generators`), initializes git, and scans it immediately. |
+| `guardian memory` | Guardian's in-repo memory: `memory add <summary>` records a decision, `memory list` shows it newest-first, `memory relevant <file>` recalls entries touching a file — past fixes and rejected approaches survive across sessions. |
 | `guardian scan --json` | Prints the raw scan result as JSON (pipeline-friendly; no banner/spinner pollution). |
 | `guardian verify` | Adds a **Guardian Score** row to the Δ table, so every fix iteration shows points moving, not just raw metrics. |
 | `guardian share` | Renders a 1200×630 self-contained share card (`GUARDIAN_CARD.html`) — score, trend, integrity/evidence chips, top findings. Screenshot it and post it. |
