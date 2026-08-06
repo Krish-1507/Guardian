@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.1] - 2026-08-06
+
+### Fixed
+
+- **`pen --fix` patches are now `git apply`-valid.** Hand-rolled hunks were
+  rejected by `git apply` ("corrupt patch at line N"); patches are now built in
+  git's canonical unified-diff shape (context lines counted once, `+` lines
+  interleaved at their positions, exactly one trailing newline) and apply
+  cleanly — verified on a real BOM'd-file project (helmet headers live,
+  `x-powered-by` gone after applying).
+- **UTF-8 BOM tolerance:** `package.json` / start-script parsing in the pen
+  static and dynamic phases no longer crashes on BOM'd files (seen in the
+  wild from Windows editors).
+- **`guardian drive` verdicts for runtime findings:** pen findings are now
+  verified by the repro test (must FAIL first, then PASS after the agent's
+  fix) instead of the static score, which has no baseline in pen-only repos.
+  Static `verify` is still shown as context.
+- **`spinner.warn`** used when the dynamic phase aborts (app failed to boot,
+  or user interrupted) instead of a green success spinner.
+- **Evidence window isolation** in the dynamic phase: outbound-connection
+  evidence is filtered to the current attack (`n > nextN`), so a previous
+  attack's connection can no longer be credited to a later route.
+- **SSRF host recording** now reads `req.headers.host` so findings show the
+  real target host.
+
 ## [0.8.0] - 2026-08-06
 
 ### Added (the pen-test release)
