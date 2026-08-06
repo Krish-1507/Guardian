@@ -1,15 +1,18 @@
 # Guardian CLI
 
-**Deterministic scans + your coding agent's own reasoning, in one autonomous quality loop. Adds a `/guardian` slash-command to any AI coding tool.**
+**The agent finally has a referee it can't cheat.** Guardian is a CLI that scans your repo,
+scores it, and checks everything your AI coding agent does — so when it says "done", you
+know it's actually done.
 
 [![npm version](https://img.shields.io/npm/v/cli-guardian)](https://www.npmjs.com/package/cli-guardian)
 [![CI](https://github.com/Krish-1507/Guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/Krish-1507/Guardian/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **The agent finally has a referee it can't cheat.** Guardian measures your repo with
-> deterministic scans, seals every number in a tamper-evident evidence chain, attacks your
-> app with a live penetration test, and gates every change — catching the "agent faked
-> being done" moves with exit codes: `0` clean · `1` suspicious · `2` confirmed cheat.
+> AI coding agents are brilliant at fixing things — and equally brilliant at *saying they
+> did* when they didn't. Guardian measures your repo with scans, seals every number so it
+> can't be edited later, attacks your app with a live penetration test, and checks every
+> change your agent makes. The exit codes tell you the truth: `0` clean · `1` suspicious ·
+> `2` confirmed cheat.
 
 ---
 
@@ -47,7 +50,7 @@ Every clip below is real command output — the only thing that was trimmed is d
 
 ### The scan
 
-`guardian scan` — all analyzers in parallel, one box, one score.
+`guardian scan` — every check runs at once, one box, one score.
 
 <p align="center">
   <img src="docs/media/guardian-scan.gif" alt="guardian scan — boxed report with the Guardian Score" width="700">
@@ -55,7 +58,7 @@ Every clip below is real command output — the only thing that was trimmed is d
 
 ### Verify
 
-`guardian verify` — re-scan, show the Δ, run the anti-cheat gate over your diff.
+`guardian verify` — re-scan after a change and see exactly how the score moved. Also checks your diff for cheat patterns.
 
 <p align="center">
   <img src="docs/media/guardian-verify.gif" alt="guardian verify — the score moves, points don't lie" width="700">
@@ -71,7 +74,7 @@ Every clip below is real command output — the only thing that was trimmed is d
 
 ### Inspect
 
-`guardian inspect <finding-id>` — deep-dive on one finding: snippet, root cause, repro status, memory.
+`guardian inspect <finding-id>` — open up one finding: the code snippet, the root cause, whether a repro test exists, and what Guardian remembers about these files.
 
 <p align="center">
   <img src="docs/media/guardian-inspect.gif" alt="guardian inspect — deep-dive on a single finding" width="700">
@@ -95,7 +98,7 @@ Every clip below is real command output — the only thing that was trimmed is d
 
 ### Report
 
-`guardian report --html` — a human-readable report, sealed with an evidence signature.
+`guardian report --html` — one self-contained HTML report, sealed with an evidence signature.
 
 <p align="center">
   <img src="docs/media/guardian-report.gif" alt="guardian report — HTML report with evidence signature" width="700">
@@ -119,7 +122,7 @@ Every clip below is real command output — the only thing that was trimmed is d
 
 ### Try it on your repo
 
-`guardian try .` — zero-setup score on any repo in ~2 seconds, with a sealed baseline saved.
+`guardian try .` — score any repo in ~2 seconds, no setup, no config.
 
 <p align="center">
   <img src="docs/media/guardian-try.gif" alt="guardian try — zero-setup score on any repo" width="700">
@@ -189,9 +192,9 @@ One command, that's it:
 npx cli-guardian@latest install
 ```
 
-Run it from inside any project directory. It writes `/guardian` into every supported tool
-below — project-level for the current repo, user-level so it works in any repo on your
-machine. Re-run with `-y` to refresh after updates (idempotent).
+Run it from inside any project directory. It writes the `/guardian` command into every
+supported tool below — project-level for the current repo, user-level so it works in any
+repo on your machine. Re-run with `-y` to refresh after updates (it's safe to re-run).
 
 Requires Node.js 22+ (npm will warn on older versions).
 
@@ -258,25 +261,26 @@ Legacy/alternate locations are also written where tool docs are inconsistent acr
   <img src="docs/media/guardian-loop.png" alt="Guardian's autonomous loop: scan → report → you confirm → repro (must FAIL first) → fix → verify → repeat until a fresh scan shows zero clusters" width="900">
 </p>
 
-The loop runs **inside your AI coding tool** via `/guardian`. Guardian never edits your
-code — it measures, gates and explains; your agent does the editing under the threat of
-being caught.
+Guardian never touches your code. It checks, scores, and referees — your AI agent does the
+editing, knowing it's being watched.
 
 ### The scan
 
-`guardian scan` runs deterministic analyzers: dependency graph (circular imports), security
-(`npm audit`, plus `gitleaks` and `semgrep` when installed), duplication (`jscpd`), tests
-(jest/vitest/pytest — pass/fail, duration, coverage), build performance, accessibility,
-reliability (flaky tests, race-condition heuristics), and DevEx (unused exports, duplicate
-functions). A category whose underlying tool isn't installed prints `skipped` with the
-one-line install hint next to it, instead of a made-up number. The box always opens with the
-**Guardian Score**: a single 0–100 health number (with an A–F grade) computed across the
-categories that actually ran.
+`guardian scan` runs a bunch of checks on your repo: circular imports, known security
+issues (`npm audit`, plus `gitleaks` and `semgrep` when installed), duplicated code
+(`jscpd`), test results (jest/vitest/pytest — pass/fail, duration, coverage), build speed,
+accessibility, flaky-test and race-condition heuristics, and developer-experience checks
+(unused exports, duplicate functions).
 
-Scans are fast by design: the subprocess-bound analyzers run **in parallel**, flaky detection
-runs the suite **twice** by default (`--reliability-runs <n>` to tune; `1` disables it), and
-`npm audit` results are cached (24h, keyed on the lockfile hash) so repeated scans inside one
-fix loop never re-hit the registry.
+Each check either contributes a real number, or prints `skipped` with a one-line hint on
+how to install the tool it needs — it never makes up a number. Everything adds up to one
+box that always opens with the **Guardian Score**: a single 0–100 health number (with an
+A–F grade) across the categories that actually ran.
+
+Scans are fast by design: the checks run **in parallel**, flaky detection runs the suite
+**twice** by default (`--reliability-runs <n>` to tune; `1` disables it), and `npm audit`
+results are cached for 24 hours (keyed on the lockfile hash) so repeated scans inside one
+fix loop never hit the registry again.
 
 ## Every command
 
@@ -288,37 +292,37 @@ one-shot.
 
 | Command | What it does |
 |---|---|
-| `guardian scan [path] [--json] [--reuse] [--ledger]` | The full deterministic scan: dependency graph, security (`npm audit` + gitleaks/semgrep), duplication (jscpd), tests, build perf, accessibility, reliability, DevEx → one **Guardian Score** (0–100, A–F). `--json` for pipelines; `--reuse` returns the sealed baseline when the tree is unchanged; `--ledger` adds the payment idempotency fuzz. |
-| `guardian verify` | Re-scans and shows the Δ — the score moves, points don't lie. Also runs the anti-cheat gate over your diff vs HEAD. |
-| `guardian try [path]` | Zero-setup 2-second score on **any** repo — no install, no tool config; saves a sealed baseline so verify/gate can build on it. |
-| `guardian ready-check [path]` | "Worth scanning again?" — unchanged tree → exit 0 and reuse the baseline; something changed → exit 1. |
-| `guardian watch [path] [--interval ms]` | The live shield: re-runs the fast static pass the moment a file changes, printing the score delta. |
-| `guardian trends` | Turns `.guardian/scan-*.json` history into per-category sparklines + score trend — watch the loop improve a repo. |
-| `guardian budget [path]` | The token-economy bill: scan/verify/pen/repro counts and compute-seconds, plus reuse advice for the fix loop. |
+| `guardian scan [path] [--json] [--reuse] [--ledger]` | The big one. Runs every check in parallel and prints one box with a single **Guardian Score** (0–100, A–F). `--json` for scripts and pipelines; `--reuse` returns the saved baseline when nothing changed; `--ledger` also fuzzes payment idempotency. |
+| `guardian verify` | Re-scans after a change and shows exactly how the score moved — the numbers can't be argued with. Also checks your diff for agent-cheat patterns. |
+| `guardian try [path]` | Get a score on **any** repo in ~2 seconds — no install, no config, no setup. Saves a sealed baseline so verify and gate can build on it later. |
+| `guardian ready-check [path]` | Quick "is it worth scanning again?" — nothing changed → exit 0 and reuse the baseline; something changed → exit 1. |
+| `guardian watch [path] [--interval ms]` | The live shield. Sits in a terminal and re-checks the moment you save a file, printing how the score moved. |
+| `guardian trends` | Turns your saved scan history into per-category sparklines and a score trend — watch a repo actually improve. |
+| `guardian budget [path]` | The token bill: how many scans/verifies/pens/repros you've run and the compute-seconds, plus advice on what to reuse in a fix loop. |
 
 **The fix loop — what the agent is told to do**
 
 | Command | What it does |
 |---|---|
-| `guardian drive <finding-id> [path]` | Hands one finding to *your own agent* (`GUARDIAN_AGENT` or `--agent '…{prompt}'`): repro FAIL first → fix → repro PASS → verify. Guardian never edits your code. |
-| `guardian memory add/list/relevant` | In-repo memory: record a decision (`add`), see it newest-first (`list`), recall entries touching a file (`relevant`) — past fixes and rejected approaches survive across sessions. |
-| `guardian inspect <finding-id>` | Deep-dive on one finding: code snippet, root-cause cluster, whether a permanent repro test exists, and Guardian's memory of the files. |
+| `guardian drive <finding-id> [path]` | Hands one finding to *your own agent* (`GUARDIAN_AGENT` or `--agent '…{prompt}'`) with explicit orders: write a failing repro first, fix it, make the repro pass, then verify. Guardian referees the whole thing and never edits your code. |
+| `guardian memory add/list/relevant` | A scratchpad inside the repo: record a decision (`add`), see them newest-first (`list`), or pull up anything related to a file (`relevant`) — so past fixes and rejected approaches survive across sessions. |
+| `guardian inspect <finding-id>` | Opens up one finding: the code snippet, the root cause, whether a repro test exists, and what Guardian remembers about these files. |
 
 **Integrity & anti-cheat — the referee**
 
 | Command | What it does |
 |---|---|
-| `guardian gate [--score 60]` | Agentless commit gate for CI/pre-commit: score threshold + regression risk + integrity diff + evidence signature. **Exit 0 = PASS · 1 = FAIL · 2 = CONFIRMED_CHEAT.** |
-| `guardian integrity [path]` | Re-checks the last commit / working tree for cheat patterns *without* scanning: deleted or neutered tests, swallowed errors, suppression comments, hardcoded-to-pass values, mocked SUT, forced exits. **Exit 0 = CLEAN · 1 = SUSPICIOUS · 2 = CONFIRMED_CHEAT.** |
-| `guardian ci [path]` | CI-mode scan + verify against the base branch → PR-ready markdown report — the gate as a PR comment. Diagnostic only; fixes stay local via `/guardian`. |
+| `guardian gate [--score 60]` | A commit gate for CI or pre-commit: score threshold + regression risk + diff integrity + evidence signature. **Exit 0 = PASS · 1 = FAIL · 2 = CONFIRMED_CHEAT.** |
+| `guardian integrity [path]` | Checks the latest commit or working tree for cheat patterns *without* a full scan: deleted or neutered tests, swallowed errors, suppression comments, hardcoded-to-pass values, mocked modules, forced exits. **Exit 0 = CLEAN · 1 = SUSPICIOUS · 2 = CONFIRMED_CHEAT.** |
+| `guardian ci [path]` | CI-friendly scan + verify against the base branch → a PR-ready markdown report — the gate as a PR comment. It only reports; fixes stay local via `/guardian`. |
 
 **Penetration test — attack your own app**
 
 | Command | What it does |
 |---|---|
-| `guardian pen [path] [--fix] [--html] [--json]` | A real pen test: static heuristics (secrets, routes, injection/SSRF/XSS) + a **dynamic phase that boots the app under a sandbox** recording every outbound HTTP and spawn. Findings are `PROVEN` only from sandbox canary evidence; everything else is honestly `indicated`/`unproven`. Nothing reaches the real network; raw sockets are blocked. `--fix` writes failing-then-passing repro tests + `git apply`-able patches. Exit 0 = clean · 1 = high/critical · 2 = aborted. |
-| `guardian inspect <pen-id>` | Deep-dives pen findings: the exact attack fired, the observed response, the sandbox evidence lines, the fix, the repro. |
-| `guardian repro <pen-id>` | Records a pen finding as a sandbox-booted regression test — fails now, must pass after the fix. |
+| `guardian pen [path] [--fix] [--html] [--json]` | A real pen test of your own app. Static heuristics find candidates (secrets, routes, injection/SSRF/XSS), then it **boots the app in a sandbox** and attacks it live, recording every outbound HTTP call and spawned process. Findings are labeled `PROVEN` only when the sandbox saw real evidence; everything else is honestly `indicated`/`unproven`. Nothing reaches the real network; raw sockets are blocked. `--fix` writes failing-then-passing repro tests + `git apply`-able patches. Exit 0 = clean · 1 = high/critical · 2 = aborted. |
+| `guardian inspect <pen-id>` | Deep-dives a pen finding: exactly what attack was fired, what the app responded with, the sandbox evidence lines, the fix, the repro. |
+| `guardian repro <pen-id>` | Turns a pen finding into a regression test that boots the app — fails now, must pass after the fix. |
 
 **Proof & reports — what you show people**
 
@@ -326,77 +330,77 @@ one-shot.
 |---|---|
 | `guardian report --html` | One self-contained `GUARDIAN_REPORT.html` (inline SVG trends, integrity timeline, zero external assets). Also writes `GUARDIAN_BADGE.svg` — a README-ready shield: `![Guardian score](GUARDIAN_BADGE.svg)`. |
 | `guardian share` | Renders a 1200×630 share card (`GUARDIAN_CARD.html`) — score, trend, integrity/evidence chips, top findings. Screenshot it and post it. |
-| `guardian digest [--days N] [--md]` | The progress story: score movement, what got fixed/regressed, gate results, cheat catches, flakies, open findings. |
-| `guardian honesty [--html]` | The AI-honesty proof: evidence chain + integrity history + verify delta + committed repro tests → one verdict, or a shareable HTML certificate. |
+| `guardian digest [--days N] [--md]` | The progress story: how the score moved, what got fixed and what regressed, gate results, cheat catches, flakies, open findings. |
+| `guardian honesty [--html]` | The proof that the numbers are real: evidence chain + integrity history + verify deltas + committed repro tests → one verdict, or a shareable HTML certificate. |
 
 **Setup & transparency**
 
 | Command | What it does |
 |---|---|
-| `guardian install` / `install --uninstall` | Writes `/guardian` into every supported tool (project + user level). `--uninstall` removes everything. |
-| `guardian doctor` | Explains why categories are `skipped`: checks the toolchain (Node, git, jscpd, gitleaks, semgrep, pa11y) and prints copy-paste install hints. |
-| `guardian prompt [--args …]` | Prints the exact `/guardian` prompt your AI tool expands to, with your arguments substituted — full transparency into what the agent was told. |
+| `guardian install` / `install --uninstall` | Writes `/guardian` into every supported tool (project + user level). `--uninstall` removes it all. |
+| `guardian doctor` | Explains why categories show `skipped`: checks your toolchain (Node, git, jscpd, gitleaks, semgrep, pa11y) and prints copy-paste install hints. |
+| `guardian prompt [--args …]` | Prints the exact prompt your AI tool expands `/guardian` into, with your arguments filled in — full transparency into what the agent was told. |
 | `guardian demo [demo]` | Scaffolds an intentionally-broken demo repo into a fresh temp dir (`demo-repo`, `demo-repo-integrity`, `demo-repo-fintech`, `demo-repo-generators`), initializes git, and scans it immediately. |
 
 ### The score & badge
 
-Skipped categories are excluded and weights renormalized, so a missing `jscpd` never
-silently tanks the number. The verify Δ compares the score against the last scan with the
-*exact same categories measured* — a skipped category stays skipped on both sides, so the
-score only moves when the code does.
+Skipped categories are excluded and the weights re-adjusted, so a missing `jscpd` never
+silently drags the number down. The verify Δ compares against the last scan with the *exact
+same categories measured* — a category skipped on both sides can't move the score. The
+score only moves when your code does.
 
 ### Tamper-evident evidence
 
-Every scan, verify and integrity document Guardian writes is sealed with a `sha256` digest
-over its own canonical content (`guardian-sha256-canonical-v1`, deterministic key-sorted
-JSON). Edit the JSON after the fact — inflate a score, delete a finding — and
-`guardian verify`/`guardian gate` recompute the digest, detect the mismatch and report the
-chain as broken. Guardian can't be tricked into endorsing a baseline it didn't write; the
-`gate` exit code treats a broken chain as a hard fail.
+Every scan, verify and integrity document Guardian writes gets a `sha256` fingerprint of
+its own contents (`guardian-sha256-canonical-v1`, deterministic key-sorted JSON). Edit the
+JSON after the fact — inflate a score, delete a finding — and the next
+`guardian verify`/`guardian gate` recomputes the fingerprint, sees the mismatch, and
+reports the chain as broken. Guardian can't be tricked into endorsing a baseline it didn't
+write; the `gate` exit code treats a broken chain as a hard fail.
 
 ### Prompt transparency
 
-Some AI tools show a slash-command's expanded prompt in their UI, some don't. Guardian
-guarantees it two ways: the `/guardian` prompt's **Step 0** makes the agent print the exact
-instructions it's operating under (mode, sequence, guardrails) as its very first message in
-your window — and `guardian prompt` lets you preview the raw prompt before anyone types
-anything.
+Some AI tools show you the expanded slash-command prompt in their UI, some don't. Guardian
+guarantees you see it either way: the `/guardian` prompt's **Step 0** makes the agent print
+the exact instructions it's operating under (mode, sequence, guardrails) as its very first
+message in your window — and `guardian prompt` lets you preview the raw prompt before
+anyone types anything.
 
 ### Root-cause correlation
 
-Findings that touch the same files are clustered into root causes, so the box shows
-`1 root cause → 2 symptoms` instead of a flat list. Every cluster gets a deterministic id
-(e.g. `security-19c390c6`) that the repro step can reference.
+Findings that touch the same files get grouped into one root cause, so the box shows
+`1 root cause → 2 symptoms` instead of a flat list. Every cluster gets a stable id (e.g.
+`security-19c390c6`) that the repro step can reference.
 
 ### Confirm, then loop
 
-The agent prints the boxed summary, then **waits for your one-time confirmation**. After
-that it works cluster by cluster on a `guardian/*` branch: it must capture the bug as a
-failing test first (`guardian repro <id>`), make the smallest fix, pass the same repro
-test, run `guardian verify`, and commit. It re-scans after every fix and stops when a fresh
-scan shows zero clusters (hard limits: 10 fix iterations or 45 minutes), ending with a
+The agent prints the boxed summary, then **waits for your one-time OK**. After that it
+works through each cluster on a `guardian/*` branch: capture the bug as a failing test
+first (`guardian repro <id>`), make the smallest fix, pass the same repro test, run
+`guardian verify`, and commit. It re-scans after every fix and stops when a fresh scan
+shows zero clusters (hard limits: 10 fix rounds or 45 minutes), ending with a
 `GUARDIAN_REPORT.md`.
 
 ### Ledger mode (opt-in)
 
-`guardian scan --ledger` boots the app with **every outbound HTTP call intercepted** by a
-mock gateway, then replays the three classic idempotency failures (duplicate webhook,
-concurrent double-submit, delayed retry). If the mock gateway's own receipt log shows more
-than one charge per idempotency key, that is a proven double-charge — the shipped
+`guardian scan --ledger` boots your app with **every outbound HTTP call rerouted to a mock
+gateway**, then replays the three classic payment bugs: duplicate webhook, concurrent
+double-submit, delayed retry. If the mock gateway's own receipt log shows more than one
+charge per idempotency key, that's a **proven double-charge** — not a guess. The shipped
 `demo-repo-fintech` fixture produces three such PROVEN findings because its charge and
-webhook endpoints have no idempotency guard. Any traffic the sandbox can't intercept aborts
-the run (`exit 77`); nothing ever reaches a real gateway.
+webhook endpoints have no idempotency guard. If the sandbox can't intercept some traffic,
+the run aborts (`exit 77`); nothing ever reaches a real gateway.
 
 ### Integrity gate
 
-Every `guardian verify` also diffs your change against HEAD and scans it for agent-cheat
-patterns: deleted or loosened tests, tests focused to hide failures (`fit`/`test.only`),
-swallowed exceptions, suppression comments, hardcoded-to-pass values, a mocked
-module-under-test, forced `exit(0)` in app code, and an assertion's expected value edited
-to match the buggy output. A caught cheat looks like this: change `assert.equal(round2(8.075), 8.08)`
-to expect `8.07` with nothing else in the diff → `CONFIRMED_CHEAT`, the change is blocked,
-and a human reviews it (verified against `fixtures/assertion-literal-tamper/`). An honest
-app-side fix sails through `CLEAN`.
+Every `guardian verify` also diffs your change against HEAD and checks for the classic
+agent-cheat moves: deleted or loosened tests, tests focused to hide failures
+(`fit`/`test.only`), swallowed exceptions, suppression comments, hardcoded-to-pass values,
+a mocked module-under-test, a forced `exit(0)` in app code, or an assertion's expected
+value edited to match the buggy output. A caught cheat looks like this: change
+`assert.equal(round2(8.075), 8.08)` to expect `8.07` with nothing else in the diff →
+`CONFIRMED_CHEAT`, the change is blocked, and a human reviews it (verified against
+`fixtures/assertion-literal-tamper/`). An honest app-side fix sails through `CLEAN`.
 
 ### Cheat-catch demo
 
@@ -408,10 +412,10 @@ video or a live judge's demo.
 
 ## Architecture
 
-Guardian is two pieces: a **deterministic CLI** that measures, and **your host agent** that
-reasons and edits. The CLI produces reproducible scan/verify numbers and gated verdicts;
-the model in whichever tool you're using reads them, decides what to change, and does the
-editing through the `/guardian` prompt template. This is deliberately *not* a monolithic
+Guardian is two pieces that never mix: a **CLI that measures**, and **your host agent that
+reasons and edits**. The CLI produces the scan/verify numbers and the gate verdicts; the
+model in whichever tool you're using reads them, decides what to change, and does the
+editing through the `/guardian` prompt template. This is deliberately *not* one monolithic
 agent — the numbers can't be talked into looking better, and the agent can't silently
 cheat its own referee. That separation is the product.
 
