@@ -16,6 +16,7 @@ import chalk from "chalk";
 
 export interface Spinner {
   succeed(text?: string): void;
+  warn(text?: string): void;
   fail(text?: string): void;
 }
 
@@ -26,6 +27,9 @@ export function createSpinner(text: string): Spinner {
       succeed: (t?: string) => {
         if (t) console.log(chalk.green(`✓ ${t}`));
       },
+      warn: (t?: string) => {
+        console.log(chalk.yellow(`⚠ ${t ?? text}`));
+      },
       fail: (t?: string) => {
         console.log(chalk.red(`✗ ${t ?? text}`));
       },
@@ -34,6 +38,7 @@ export function createSpinner(text: string): Spinner {
   const spin = ora({ text, stream: process.stdout }).start();
   return {
     succeed: (t?: string) => spin.succeed(t),
+    warn: (t?: string) => spin.warn(t),
     fail: (t?: string) => spin.fail(t),
   };
 }

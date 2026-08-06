@@ -21,68 +21,58 @@ import type { PenFinding, PenResult } from "./types.js";
 
 export interface PenFixOutcome {
   repros: { findingId: string; file: string }[];
-  patches: { findingId: string; file: string; diffPath: string; note: string }[];
+  patches: { findingId: string; file: string; diffPath: string; note: string; findingIds: string[] }[];
   fixesMd: string;
 }
 
 /* ------------------------------------------------------------------ */
-/* tiny unified-diff builder (single-hunk, insert/replace)             */
+/* unified-diff builders: zero-context insertion hunks. `git apply`   */
+/* accepts `@@ -N,0 +M,K @@` (pure insertions) with no context lines, */
+/* so the math is exact by construction — no context matching, no     */
+/* hunk-header string surgery.                                         */
 /* ------------------------------------------------------------------ */
 
-function makeInsertPatch(
-  rel: string,
-  oldLines: string[],
-  insertAfterLine: number,
-  newLines: string[],
-): string {
-  const rangeStart = Math.max(1, insertAfterLine - 2);
-  const rangeEnd = Math.min(oldLines.length, insertAfterLine + 1);
-  const ctx = oldLines.slice(rangeStart - 1, rangeEnd);
-  const anchorPos = insertAfterLine - rangeStart;
-  const minus = ctx.map((l) => " " + l);
-  const plus = [
-    ...ctx.slice(0, anchorPos + 1).map((l) => " " + l),
-    ...newLines.map((l) => "+" + l),
-    ...ctx.slice(anchorPos + 1).map((l) => " " + l),
-  ];
-  const oldCount = minus.length;
-  const newCount = plus.length;
-  return [
-    `--- a/${rel}`,
-    `+++ b/${rel}`,
-    `@@ -${rangeStart},${oldCount} +${rangeStart},${newCount} @@`,
-    ...minus,
-    ...plus,
-    "",
-  ].join("\n");
-}
+/* ------------------------------------------------------------------ */
+/* unified-diff builder: pure-insertion hunks in git's canonical form. */
+/* Guardian's deterministic fixes NEVER delete user lines — they only  */
+/* insert. In the hunk, every ` ` (context) line counts toward BOTH    */
+/* sides and appears ONCE, with `+` lines interleaved at their         */
+/* positions — exactly the shape `git diff` emits, which `git apply`   */
+/* parses unambiguously (including UTF-8 BOM'd first lines).           */
+/* ------------------------------------------------------------------ */
 
-function makeReplacePatch(
-  rel: string,
-  oldLines: string[],
-  atLine: number,
-  newLines: string[],
-): string {
-  const rangeStart = Math.max(1, atLine - 2);
-  const rangeEnd = Math.min(oldLines.length, atLine + 2);
-  const ctx = oldLines.slice(rangeStart - 1, rangeEnd);
-  const relPos = atLine - rangeStart;
-  const minus = ctx.map((l, i) => (i === relPos ? "-" + l : " " + l));
-  const plus = [
-    ...ctx.slice(0, relPos).map((l) => " " + l),
-    ...newLines.map((l) => "+" + l),
-    ...ctx.slice(relPos + 1).map((l) => " " + l),
-  ];
-  const oldCount = minus.length;
-  const newCount = plus.length;
+function insertionPatch(rel: string, oldLines: string[], inserts: { after: number; lines: string[] }[]): string {
+  if (inserts.length === 0) return "";
+  const oldLen = oldLines.length;
+  const sorted = [...inserts].sort((a, b) => a.after - b.after);
+  const first = sorted[0].after;
+  const last = sorted[sorted.length - 1].after;
+  const ctx = 3;
+  const start = Math.max(0, first - ctx);
+  const end = Math.min(oldLen, last + ctx);
+  const ctxCount = end - start;
+  const plusCount = sorted.reduce((n, ins) => n + ins.lines.length, 0);
+
+  const body: string[] = [];
+  let cursor = start;
+  for (const ins of sorted) {
+    while (cursor < ins.after && cursor < oldLen) {
+      body.push(" " + oldLines[cursor]);
+      cursor++;
+    }
+    for (const l of ins.lines) body.push("+" + l);
+  }
+  while (cursor < end) {
+    body.push(" " + oldLines[cursor]);
+    cursor++;
+  }
+
   return [
     `--- a/${rel}`,
     `+++ b/${rel}`,
-    `@@ -${rangeStart},${oldCount} +${rangeStart},${newCount} @@`,
-    ...minus,
-    ...plus,
-    "",
-  ].join("\n");
+    `@@ -${start + 1},${ctxCount} +${start + 1},${ctxCount + plusCount} @@`,
+    ...body,
+  ].join("\n") + "\n";
 }
 
 /* ------------------------------------------------------------------ */
@@ -104,7 +94,7 @@ function findExpressAppFile(repo: string): { file: string; line: number; lineTex
         stack.push(p);
       } else if (e.isFile() && /\.(js|mjs|cjs|ts)$/i.test(e.name)) {
         try {
-          const lines = fs.readFileSync(p, "utf8").split(/\r?\n/);
+          const lines = readLines(p);
           for (let i = 0; i < lines.length; i++) {
             if (/const\s+app\s*=\s*express\s*\(/.test(lines[i])) {
               return { file: p, line: i + 1, lineText: lines[i] };
@@ -127,6 +117,9 @@ function readLines(file: string): string[] {
   }
 }
 
+/** Content of a line with a leading UTF-8 BOM (common after Windows tools) stripped. */
+const noBom = (l: string) => l.replace(/^\uFEFF/, "");
+
 export function runFixes(repo: string, result: PenResult, packages: string[]): PenFixOutcome {
   const repros: PenFixOutcome["repros"] = [];
   const patches: PenFixOutcome["patches"] = [];
@@ -141,6 +134,19 @@ export function runFixes(repo: string, result: PenResult, packages: string[]): P
   const expressApp = findExpressAppFile(repo);
   const helmetInstalled = packages.includes("helmet");
 
+  // Patches are merged PER FILE so that `git apply` works in any order and
+  // each .diff is cumulative: the target state is computed from the ORIGINAL
+  // file plus every deterministic change, then emitted as one hunk.
+  interface FilePatch {
+    rel: string;
+    file: string;
+    anchor: number;
+    importLine: string | null;
+    after: string[];
+    findingIds: string[];
+  }
+  const byFile = new Map<string, FilePatch>();
+
   for (const f of result.findings) {
     // x-powered-by: disable it right after app creation. Behavior-neutral.
     if (f.type === "info-leak-header" && expressApp) {
@@ -148,15 +154,17 @@ export function runFixes(repo: string, result: PenResult, packages: string[]): P
       const lines = readLines(expressApp.file);
       const already = lines.some((l) => /disable\s*\(\s*["']x-powered-by["']/.test(l));
       if (!already) {
-        const diff = makeInsertPatch(rel, lines, expressApp.line, [`app.disable("x-powered-by");`]);
-        const diffPath = path.join(patchDir, `${f.id}-disable-x-powered-by.diff`);
-        fs.writeFileSync(diffPath, diff, "utf8");
-        patches.push({
-          findingId: f.id,
-          file: rel,
-          diffPath: path.relative(repo, diffPath).replace(/\\/g, "/"),
-          note: "inserts `app.disable(\"x-powered-by\");` after the Express app creation line",
-        });
+        const fp = byFile.get(rel) ?? {
+          rel,
+          file: expressApp.file,
+          anchor: expressApp.line,
+          importLine: null,
+          after: [],
+          findingIds: [],
+        };
+        if (!fp.after.includes(`app.disable("x-powered-by");`)) fp.after.push(`app.disable("x-powered-by");`);
+        fp.findingIds.push(f.id);
+        byFile.set(rel, fp);
       }
     }
 
@@ -166,26 +174,43 @@ export function runFixes(repo: string, result: PenResult, packages: string[]): P
       const lines = readLines(expressApp.file);
       const already = lines.some((l) => /\bhelmet\s*\(/.test(l));
       if (!already) {
-        const importLine = /^(?:import|export)\b.*;?\s*$/.test(lines[0] ?? "") || lines.some((l) => /^import\b/.test(l))
-          ? `import helmet from "helmet";`
-          : `const helmet = require("helmet");`;
-        const diff = makeInsertPatch(rel, lines, expressApp.line, [
-          `app.use(helmet());`,
-        ]);
-        const fullDiff = diff.replace(
-          /^@@ -(\d+),(\d+) \+(\d+),(\d+) @@/,
-          (_m, a, b, c, d) => `@@ -${a},${b} +${c},${Number(d) + 1} @@`,
-        ).replace(/^\+app\.use\(helmet\(\)\);\s*$/m, `+${importLine}\n+app.use(helmet());`);
-        const diffPath = path.join(patchDir, `${f.id}-add-helmet.diff`);
-        fs.writeFileSync(diffPath, fullDiff, "utf8");
-        patches.push({
-          findingId: f.id,
-          file: rel,
-          diffPath: path.relative(repo, diffPath).replace(/\\/g, "/"),
-          note: "adds the helmet import + `app.use(helmet());` after the Express app creation line (helmet is already in package.json)",
-        });
+        const isEsm = lines.some((l) => /^import\b/.test(noBom(l))) || /^\s*import\s+express\b/.test(noBom(lines[0] ?? ""));
+        const importLine = isEsm ? `import helmet from "helmet";` : `const helmet = require("helmet");`;
+        const fp = byFile.get(rel) ?? {
+          rel,
+          file: expressApp.file,
+          anchor: expressApp.line,
+          importLine: null,
+          after: [],
+          findingIds: [],
+        };
+        fp.importLine ??= importLine;
+        if (!fp.after.includes(`app.use(helmet());`)) fp.after.push(`app.use(helmet());`);
+        fp.findingIds.push(f.id);
+        byFile.set(rel, fp);
       }
     }
+  }
+
+  for (const fp of byFile.values()) {
+    const lines = readLines(fp.file);
+    const inserts: { after: number; lines: string[] }[] = [];
+    if (fp.importLine) inserts.push({ after: 0, lines: [fp.importLine] });
+    if (fp.after.length) inserts.push({ after: fp.anchor, lines: fp.after });
+    const diff = insertionPatch(fp.rel, lines, inserts);
+    if (!diff) continue;
+    const diffPath = path.join(patchDir, `${fp.findingIds[0]}-fix.diff`);
+    fs.writeFileSync(diffPath, diff, "utf8");
+    patches.push({
+      findingId: fp.findingIds[0],
+      file: fp.rel,
+      diffPath: path.relative(repo, diffPath).replace(/\\/g, "/"),
+      findingIds: fp.findingIds,
+      note:
+        fp.after.join(", ") +
+        (fp.importLine ? " (plus the helmet import)" : "") +
+        " inserted after the Express app creation line — one cumulative patch for this file, applies cleanly on its own",
+    });
   }
 
   const fixesMd = buildFixesMd(repo, result, repros, patches);
@@ -196,10 +221,11 @@ function buildFixesMd(
   repo: string,
   result: PenResult,
   repros: { findingId: string; file: string }[],
-  patches: { findingId: string; file: string; diffPath: string; note: string }[],
+  patches: PenFixOutcome["patches"],
 ): string {
   const reproBy = new Map(repros.map((r) => [r.findingId, r.file]));
-  const patchBy = new Map(patches.map((p) => [p.findingId, p]));
+  const patchBy = new Map<string, PenFixOutcome["patches"][number]>();
+  for (const p of patches) for (const id of p.findingIds) patchBy.set(id, p);
   const L: string[] = [];
   L.push(`# Guardian Pen Test — Fix Plan`);
   L.push("");

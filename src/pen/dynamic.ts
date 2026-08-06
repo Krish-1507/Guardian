@@ -55,7 +55,7 @@ function freePort(): Promise<number> {
 function resolveStart(repo: string): { cmd: string; args: string[] } {
   const pkgPath = path.join(repo, "package.json");
   if (!fs.existsSync(pkgPath)) throw new Error("no package.json — pen dynamic needs a `start` script");
-  const start = JSON.parse(fs.readFileSync(pkgPath, "utf8"))?.scripts?.start || "";
+  const start = JSON.parse(fs.readFileSync(pkgPath, "utf8").replace(/^\uFEFF/, ""))?.scripts?.start || "";
   if (!start) throw new Error("no `start` script in package.json — pen dynamic needs one");
   const tokens = start.trim().split(/\s+/);
   const cmd = tokens[0] || "";

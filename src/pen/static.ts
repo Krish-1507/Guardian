@@ -461,7 +461,7 @@ export function analyzeStatic(repo: string): PenStaticOutcome {
 
   let pkg: any = {};
   try {
-    pkg = JSON.parse(fs.readFileSync(path.join(repo, "package.json"), "utf8"));
+    pkg = JSON.parse(fs.readFileSync(path.join(repo, "package.json"), "utf8").replace(/^\uFEFF/, ""));
   } catch {
     /* no package.json */
   }

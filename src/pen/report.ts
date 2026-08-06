@@ -112,7 +112,7 @@ export function renderPenBox(result: PenResult): string {
   });
 }
 
-/** Self-contained HTML report (no external assets), mirroring other guard deeds. */
+/** Self-contained Markdown report (also the basis for the HTML one). */
 export function renderPenMarkdown(result: PenResult): string {
   const sum = result.summary;
   const findings = sortFindings(result.findings);

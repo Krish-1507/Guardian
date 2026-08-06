@@ -3,7 +3,7 @@ import chalk from "chalk";
 import boxen from "boxen";
 import path from "node:path";
 import { execa } from "execa";
-import { loadScan } from "../repro/index.js";
+import { loadScan, repro } from "../repro/index.js";
 import { resolveFinding } from "../repro/ids.js";
 import { loadPenLatest, resolvePenFinding } from "../pen/store.js";
 import { runVerify } from "./verify.js";
@@ -21,7 +21,12 @@ import { runVerify } from "./verify.js";
  *   guardian drive security-abc123 --agent "claude -p \"{prompt}\""
  */
 
-function missionPrompt(repo: string, finding: { id: string; source: string; severity: string; type: string; description: string; file?: string; line?: number }, reproHint: string): string {
+function missionPrompt(
+  repo: string,
+  finding: { id: string; source: string; severity: string; type: string; description: string; file?: string; line?: number },
+  reproHint: string,
+  fromPen: boolean,
+): string {
   return [
     `You are fixing one specific Guardian finding in the repo at ${repo}.`,
     ``,
@@ -35,7 +40,9 @@ function missionPrompt(repo: string, finding: { id: string; source: string; seve
     reproHint,
     `2. Make the smallest fix that addresses the root cause. Do not refactor unrelated code.`,
     `3. Re-run the SAME repro: it must now PASS.`,
-    `4. Run \`npx cli-guardian verify\` — it must come back clean (no regressions, integrity intact).`,
+    fromPen
+      ? `4. \`npx cli-guardian verify\` is a static gate — for runtime pen findings the repro PASS is the real verdict;`
+      : `4. Run \`npx cli-guardian verify\` — it must come back clean (no regressions, integrity intact).`,
     `5. If anything regressed, revert the smallest unit and try again.`,
     ``,
     `Finish by reporting: what was wrong, what you changed, and the exact commands you ran.`,
@@ -58,6 +65,7 @@ export const drive = new Command("drive")
       const pen = loadPenLatest(repo);
       let finding: { id: string; source: string; severity: string; type: string; description: string; file?: string; line?: number } | null = null;
       let reproHint = "";
+      let fromPen = false;
 
       const scanHit = scan ? resolveFinding(scan, findingId) : null;
       if (scanHit) {
@@ -74,6 +82,7 @@ export const drive = new Command("drive")
       } else if (pen) {
         const pf = resolvePenFinding(pen, findingId);
         if (pf) {
+          fromPen = true;
           finding = {
             id: pf.id,
             source: pf.source,
@@ -117,7 +126,7 @@ export const drive = new Command("drive")
         return;
       }
 
-      const prompt = missionPrompt(repo, finding, reproHint);
+      const prompt = missionPrompt(repo, finding, reproHint, fromPen);
       const tokens = agentCmd.split(/\s+/).map((t) => (t.includes("{prompt}") ? prompt : t)).filter(Boolean);
       const [cmd, ...args] = tokens;
       const finalArgs = args.map((a) => a.replace("{prompt}", prompt));
@@ -142,6 +151,36 @@ export const drive = new Command("drive")
       }
 
       console.log(chalk.dim(`\nagent exited with code ${agentCode} — verifying the result...\n`));
+
+      if (fromPen) {
+        const r = await repro(repo, findingId);
+        const pass = r.status === "generated-and-ran" && r.ran?.passed === true;
+        const paint = pass ? chalk.green : chalk.red;
+        const why = pass
+          ? "repro now PASSES — the runtime hypothesis is unproven, the fix holds."
+          : r.status === "generated-and-ran"
+            ? "repro still FAILS — the bug is live; the agent did not address it."
+            : `repro could not run: ${r.reason ?? r.status}`;
+        const v = await runVerify(repo);
+        console.log(
+          boxen(
+            `${paint(pass ? "VERIFIED — repro now PASSES (bug addressed)" : "NOT VERIFIED — repro still FAILS (bug live)")}\n\n` +
+              `${why}\n\n` +
+              `test: ${r.file ?? "?"} · ${pass ? "PASS" : "FAIL"}\n` +
+              `verify (static gate, context only): score ${v.currentScore.score}/100 (${v.currentScore.grade}) vs baseline ${v.baselineScore.score}/100 (${v.baselineScore.grade}) · delta ${v.scoreDelta >= 0 ? "+" : ""}${v.scoreDelta} · integrity ${v.integrity.verdict}`,
+            {
+              title: ` GUARDIAN — Drive ${findingId} `,
+              titleAlignment: "center",
+              borderStyle: "round",
+              padding: 1,
+              borderColor: pass ? "green" : "red",
+            },
+          ),
+        );
+        process.exitCode = pass ? 0 : 1;
+        return;
+      }
+
       const v = await runVerify(repo);
       const paint = v.exitCode === 0 ? chalk.green : chalk.red;
       console.log(

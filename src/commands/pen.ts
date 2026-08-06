@@ -47,11 +47,11 @@ export async function runPen(repo: string, opts: PenOptions): Promise<PenResult>
     );
     try {
       const d = await runDynamic(repo, staticOutcome.routes);
-      spin.succeed(
-        d.status === "ok"
-          ? `Dynamic phase done — ${d.routesProbed} routes, ${d.attacks} attacks`
-          : `Dynamic phase ${d.status}`,
-      );
+      if (d.status === "aborted") {
+        spin.warn(`Dynamic phase aborted — ${d.note ?? "app did not respond"}`);
+      } else {
+        spin.succeed(`Dynamic phase done — ${d.routesProbed} routes, ${d.attacks} attacks`);
+      }
       findings.push(...d.findings);
       dynamic = {
         status: d.status,

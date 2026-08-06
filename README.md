@@ -201,6 +201,19 @@ cheat its own referee. That separation is the product.
   installed locally. The scan reports `skipped` for those categories and works fine without
   them.
 - Requires **Node.js 22+** (the CLI depends on execa 10, which uses ES2024 `Set.union`).
+- **Pen-test honesty:** `guardian pen` reports each finding as **proven** (live attack
+  confirmed under the sandbox), **indicated** (attack produced strong but not fully
+  confirming evidence), or **heuristic** (static pattern, no runtime evidence). Proven
+  findings are real; indicated/heuristic ones are hypotheses until you replay the attack
+  yourself. The sandbox records outbound connections and spawned processes instead of
+  blocking them (so real bytes never leave your machine for canaries, but a compromised
+  app could still run commands locally); raw socket APIs are blocked outright.
+  `pen --fix` writes deterministic patches **only** for findings fixable by pure insertion
+  (e.g. missing `helmet()`, `x-powered-by` leaks) — anything else gets a failing repro test
+  and fix guidance, which is your contract for the fix.
+- **`drive` verdicts** for runtime pen findings come from the repro test (FAIL first, PASS
+  after the fix), not from the static score — the static gate has nothing to say about a
+  runtime-only finding.
 
 ## Contributing
 
