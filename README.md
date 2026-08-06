@@ -29,6 +29,18 @@ your agent.
 
 ---
 
+## Quick Nav
+
+| Jump to | |
+|---|---|
+| [Feature tour](#feature-tour) — the 11 demos | [Install](#install) · [Usage](#usage) · [Tool support](#tool-support) |
+| [See it in 90 seconds](#see-it-in-90-seconds) | [What Guardian actually does](#what-guardian-actually-does) · [Every command](#every-command) |
+| [Architecture](#architecture) | [Known limitations](#known-limitations) · [Contributing](#contributing) · [License](#license) |
+
+**Straight to one feature:** [The scan](#the-scan) · [Verify](#verify) · [Trends](#trends) · [Inspect](#inspect) · [Repro](#repro) · [The pen test](#the-pen-test) · [Report](#report) · [Share](#share) · [Honesty](#honesty) · [Try it on your repo](#try-it-on-your-repo) · [The live shield](#the-live-shield)
+
+---
+
 ## Feature tour
 
 Every clip below is real command output — the only thing that was trimmed is dead time.
@@ -122,18 +134,6 @@ Every clip below is real command output — the only thing that was trimmed is d
 </p>
 
 The full scripted run is in [`docs/feature-tour.md`](docs/feature-tour.md).
-
----
-
-## Quick Nav
-
-| Jump to | |
-|---|---|
-| [Feature tour](#feature-tour) — the 11 demos | [Install](#install) · [Usage](#usage) · [Tool support](#tool-support) |
-| [See it in 90 seconds](#see-it-in-90-seconds) | [What Guardian actually does](#what-guardian-actually-does) · [Every command](#every-command) |
-| [Architecture](#architecture) | [Known limitations](#known-limitations) · [Contributing](#contributing) · [License](#license) |
-
-**Straight to one feature:** [The scan](#the-scan) · [Verify](#verify) · [Trends](#trends) · [Inspect](#inspect) · [Repro](#repro) · [The pen test](#the-pen-test) · [Report](#report) · [Share](#share) · [Honesty](#honesty) · [Try it on your repo](#try-it-on-your-repo) · [The live shield](#the-live-shield)
 
 ---
 
