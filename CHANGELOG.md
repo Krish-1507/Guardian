@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.2] - 2026-08-06
+
+### Added
+
+- **Patch-validity regression suite** (`npm test`, runs in CI on Linux +
+  Windows): every `pen --fix` patch must pass real `git apply --check` —
+  clean files, UTF-8 BOM'd files, top/end-of-file insertions, multi-line
+  hunks — plus hunk-math self-consistency checks. Guards the "corrupt patch
+  at line N" bug class from ever shipping again.
+- **`docs/demo.md`** — the 2-minute judge's demo script (scan → pen → repro
+  → drive).
+- **LAUNCH.md "How we prioritized"** — the feature-ranking story: every
+  phase exists to make it harder for an agent to lie about being done, and
+  what was deliberately not built (cloud, dashboard, auth, plugins).
+
 ## [0.8.1] - 2026-08-06
 
 ### Fixed
