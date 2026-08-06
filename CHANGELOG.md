@@ -10,6 +10,11 @@ All notable changes to this project are documented here.
   and `docs/media/guardian-demo.mp4` (1080p, ~34 s) — the cheat-catch demo
   captured from the tool's real output (npm-install dead time trimmed), now
   embedded in the README's "See it in 90 seconds" section.
+- **README feature tour.** Eleven per-feature GIFs
+  (`docs/media/guardian-{scan,verify,trends,inspect,repro,pen,report,share,honesty,try,watch}.gif`)
+  captured from real command output, each embedded in its own "Feature tour"
+  section with a one-line caption. Full scripted run lives in
+  `docs/feature-tour.md`.
 
 ### Changed
 
