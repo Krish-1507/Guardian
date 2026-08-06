@@ -19,6 +19,11 @@ import { gate } from "./commands/gate.js";
 import { share } from "./commands/share.js";
 import { digest } from "./commands/digest.js";
 import { honesty } from "./commands/honesty.js";
+import { pen } from "./commands/pen.js";
+import { readyCheckCmd } from "./commands/readyCheck.js";
+import { budgetCmd } from "./commands/budget.js";
+import { watch } from "./commands/watch.js";
+import { drive } from "./commands/drive.js";
 
 function readVersion(): string {
   try {
@@ -56,5 +61,10 @@ program.addCommand(gate);
 program.addCommand(share);
 program.addCommand(digest);
 program.addCommand(honesty);
+program.addCommand(pen);
+program.addCommand(readyCheckCmd);
+program.addCommand(budgetCmd);
+program.addCommand(watch);
+program.addCommand(drive);
 
 program.parseAsync(process.argv);

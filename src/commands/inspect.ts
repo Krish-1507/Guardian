@@ -6,6 +6,8 @@ import fs from "node:fs";
 import { resolveFinding, type ReproFinding } from "../repro/ids.js";
 import { loadProofs } from "../report/format.js";
 import { relevantEntriesForFiles, type MemoryEntry } from "../memory/store.js";
+import { loadPenLatest, resolvePenFinding } from "../pen/store.js";
+import type { PenFinding } from "../pen/types.js";
 import type { ScanResult, Cluster } from "../analyzers/types.js";
 
 /**
@@ -113,6 +115,60 @@ function memoryLines(repo: string, f: ReproFinding, c: Cluster | null): string[]
   return out;
 }
 
+/** Pen-finding deep dive: attack, response, sandbox evidence, fix. */
+function renderPenInspect(repo: string, f: PenFinding): void {
+  const paint = severityPaint(f.severity);
+  const lines: string[] = [];
+  lines.push(`${chalk.bold("Finding")}: ${paint(f.severity.toUpperCase())} ${chalk.bold(f.type)} · ${chalk.bold(f.confidence.toUpperCase())} · ${chalk.dim(f.id)}`);
+  const where = f.file
+    ? `${rel(repo, f.file)}${f.line ? ":" + f.line : ""}`
+    : f.route
+      ? `${f.route} [${f.method ?? ""}]`
+      : "no location";
+  lines.push(`${chalk.bold("Location")}: ${chalk.cyan(where)}`);
+  lines.push("");
+  lines.push(f.title);
+  lines.push("");
+  lines.push(f.description);
+  lines.push("");
+  if (f.attack) {
+    lines.push(
+      chalk.bold("Attack fired:"),
+      `  ${chalk.cyan(`${f.attack.method} ${f.attack.path}`)}`,
+      f.attack.payload !== undefined ? `  payload: ${chalk.dim(JSON.stringify(f.attack.payload).slice(0, 200))}` : "",
+    );
+  }
+  if (f.response) {
+    lines.push(
+      chalk.bold("Observed response:"),
+      `  HTTP ${f.response.status ?? "—"}${f.response.snippet ? ` — ${f.response.snippet}` : ""}`,
+    );
+  }
+  if (f.outbound?.length) {
+    lines.push(chalk.bold("Sandbox evidence:"), ...f.outbound.map((e) => `  ${chalk.red(e)}`));
+  }
+  if (f.repro) {
+    lines.push("", chalk.bold("Reproduce by hand:"), `  ${chalk.dim(f.repro)}`);
+  }
+  lines.push("");
+  if (f.fix) {
+    lines.push(chalk.bold("Fix:"), `  ${f.fix}`);
+  }
+  lines.push("");
+  lines.push(
+    chalk.dim(`next: ${chalk.cyan(`guardian repro ${f.id}`)} captures this as a permanent failing-then-passing test`),
+  );
+  console.log(
+    boxen(lines.join("\n"), {
+      title: ` GUARDIAN — Inspect ${f.id} `,
+      titleAlignment: "center",
+      borderStyle: "round",
+      padding: 1,
+      borderColor: paint === chalk.red ? "red" : paint === chalk.yellow ? "yellow" : "cyan",
+    }),
+  );
+}
+
 export const inspect = new Command("inspect")
   .description(
     "Deep-dive on a single finding id: code location, cluster context, repro proof, and Guardian's memory of the files.",
@@ -128,23 +184,32 @@ export const inspect = new Command("inspect")
     }
 
     const result = latestScan(repo);
-    if (!result) {
+    const penResult = loadPenLatest(repo);
+    if (!result && !penResult) {
       console.log(
         chalk.red(`no scan found — run \`guardian scan\` first to create .guardian/scan-latest.json`),
       );
       return;
     }
 
-    const f = resolveFinding(result, id);
+    const f = result ? resolveFinding(result, id) : null;
+    if (!f && penResult) {
+      const pf = resolvePenFinding(penResult, id);
+      if (pf) {
+        renderPenInspect(repo, pf);
+        return;
+      }
+    }
+
     if (!f) {
       console.log(
-        chalk.red(`finding "${id}" not found in .guardian/scan-latest.json\n`) +
+        chalk.red(`finding "${id}" not found in scan-latest.json or pen-latest.json\n`) +
           chalk.dim(`hint: ids look like ${chalk.cyan("security-19c390c6")}; run \`guardian scan\` to refresh.`),
       );
       return;
     }
 
-    const c = clusterOf(result, id);
+    const c = result ? clusterOf(result, id) : null;
     const paint = severityPaint(f.severity);
     const loc = f.file ? `${rel(repo, f.file)}${f.line ? ":" + f.line : ""}` : "no file location";
     const reproCapable = ["security", "a11y", "reliability", "devex", "ledger", "perf", "graph"].includes(

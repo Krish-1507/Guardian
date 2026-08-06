@@ -2,6 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { runTestFile, detectTestFramework, frameworkLabel } from "./framework.js";
 import { preloadPath } from "./generate.js";
+import { penPreloadPath } from "./pen.js";
 
 export interface ReproRunResult {
   ran: boolean;
@@ -33,6 +34,7 @@ export function runRepro(repo: string, file: string): Promise<ReproRunResult> {
   const framework = detectTestFramework(repo);
   const extra: Record<string, string> = {
     GUARDIAN_LEDGER_PRELOAD: preloadPath(),
+    GUARDIAN_PEN_PRELOAD: penPreloadPath(),
   };
   return runTestFile(repo, abs, extra, 150000).then((r) => ({
     ran: true,

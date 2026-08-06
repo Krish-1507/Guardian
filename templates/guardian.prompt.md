@@ -14,8 +14,8 @@ description: "Autonomous engineering quality loop — scans, shows findings, fix
 > Decide the mode **before doing anything else** — before scanning, before reading files,
 > before printing anything — by reading that one line:
 >
-> - It contains one of the flags `--scan-only`, `--demo`, `--ledger`, or
->   `--integrity-only` → **mode = that flag**. You MUST NOT print the menu. Go directly
+> - It contains one of the flags `--scan-only`, `--demo`, `--ledger`, `--integrity-only`,
+>   or `--pen` → **mode = that flag**. You MUST NOT print the menu. Go directly
 >   to the matching "## Mode: …" section below.
 > - The line is **empty**, or still shows the literal placeholder word unsubstituted (the
 >   exact placeholder text is still visible) → **mode = menu**. The user typed bare
@@ -33,13 +33,15 @@ turn and wait as the menu section says.)
 ```
 GUARDIAN prompt received. I am operating under exactly these instructions:
 
-Mode: <menu | --scan-only | --demo | --ledger | --integrity-only | default full loop>
+Mode: <menu | --scan-only | --demo | --ledger | --integrity-only | --pen | default full loop>
 Sequence: scan → show the box verbatim → ONE confirmation pause → fix cluster-by-cluster
 (repro test must fail first, then pass after the fix) → verify (integrity gate) →
 commit with the repro test → re-scan → final GUARDIAN_REPORT.md
 Guardrails: stay on a guardian/* branch · never touch secrets, .git, or CI/deploy config ·
 never loosen, delete, or hardcode-to-pass tests · never force-push ·
 hard stops: 10 fix iterations or 45 minutes
+Token guardrails: use `ready-check` + `scan --reuse` inside the loop · inspect instead of
+reading whole files · batch your edits · verify at 1 reliability run, full runs only at the end
 ```
 
 Then continue with the matching "## Mode:" section below. This block is your proof-of-
@@ -57,6 +59,7 @@ Guardian modes:
  --demo — run against Guardian's own seeded demo repo
  --ledger — payment idempotency fuzzing only
  --integrity-only — re-check the last commit for cheat patterns, no scanning
+ --pen — penetration test: live attacks + proof + fixes (regression tests, patches)
 Reply with a mode, or just hit enter for the default full loop.
 ```
 
@@ -68,6 +71,7 @@ Then wait. Map the user's next message to a mode:
 - **`--demo`** → the "## Mode: --demo" section.
 - **`--ledger`** → the "## Mode: --ledger" section.
 - **`--integrity-only`** → the "## Mode: --integrity-only" section.
+- **`--pen`** → the "## Mode: --pen" section.
 
 ## Mode: --scan-only
 
@@ -94,6 +98,36 @@ sandbox and fuzzes money-moving endpoints for missing idempotency). Then run the
 
 Run `!npx cli-guardian integrity`, print the boxed verdict **verbatim**, and **stop**.
 No scanning, no fixes, no report. That is the whole mode.
+
+## Mode: --pen
+
+Run the penetration test:
+
+`!npx cli-guardian pen --fix`
+
+This boots the app under a network-interception sandbox and fires live attacks at every
+discovered route. Print the **entire boxed output verbatim**. Then:
+
+1. **State the verdict honestly**: for every PROVEN finding (XSS reflection, SSRF canary,
+   command-injection spawn, path-traversal file leak) say exactly what was proven and how
+   (`guardian inspect <id>` shows the attack + response + sandbox evidence — use it instead
+   of reading whole files).
+2. **Confirmation pause** (the same one mandatory pause as the default loop, never skipped):
+   ask the user before fixing anything, listing the finding ids with `--fix` already written
+   (`guardian pen --fix` wrote repro tests + patches + `GUARDIAN_PEN_FIXES.md`).
+3. On confirmation, fix **one finding at a time**, each exactly like the default loop:
+   - run `!npx cli-guardian repro <pen-id>` → must **FAIL** (bug live),
+   - make the smallest fix (apply the generated patch with `git apply` when a deterministic
+     one exists — `.guardian/pen-patches/<id>.diff` — and review it before applying),
+   - re-run the **same** repro → must **PASS**,
+   - `!npx cli-guardian verify` → integrity gate CLEAN.
+4. Re-run `!npx cli-guardian pen --static` to confirm the finding is gone from the report
+   (static re-check; do not re-boot the app needlessly), then `--json` if you want the ids.
+5. Commit each fix with its repro test. Finish with `!npx cli-guardian report`.
+
+Honesty rule: `pen` proves what it fires. It cannot promise "never hacked" — it promises
+every demonstrable attack gets a regression test that fails on the bug and passes on the fix.
+If `pen --fix` wrote repro tests, never delete them; they are the permanent proof.
 
 ---
 
@@ -231,6 +265,22 @@ Then record it:
 **k. Re-scan and show a shorter status.** Run the scan again and print a short updated
 boxed status in the same visual style as Step 1, showing: issues fixed so far, issues
 remaining. No long commentary.
+
+**k2. Token economy (MANDATORY in every loop iteration).** Your budget is real; follow
+these rules exactly:
+
+- **Before any re-scan**, run `!npx cli-guardian ready-check`. If it exits 0 (tree
+  unchanged), run `!npx cli-guardian scan --reuse` instead of a full scan — it returns the
+  sealed baseline instantly, and skipping it means burning credits for nothing.
+- **Prefer `!npx cli-guardian inspect <id>`** over reading whole files: it shows the exact
+  code window, cluster context and repro proof. Read whole files only when inspect cannot
+  answer the question.
+- **Batch your edits** — plan the fix, then apply it in as few tool calls as possible.
+  One pause per loop (Step 2), never more.
+- **Verify during iteration** as-is; the reliability suite (extra runs) is for the FINAL
+  pass — don't run it per-iteration.
+- If you are about to re-scan a second time without any edit having happened, stop and
+  re-check: you are burning credits in a loop. Either pick a different cluster or ask.
 
 **l. Success check.** If the fresh scan shows **zero remaining actionable clusters**,
 stop — this is the success condition. Your final line should be:

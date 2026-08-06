@@ -111,6 +111,14 @@ fix loop never re-hit the registry.
 | `guardian share` | Renders a 1200×630 self-contained share card (`GUARDIAN_CARD.html`) — score, trend, integrity/evidence chips, top findings. Screenshot it and post it. |
 | `guardian digest [--days N] [--md]` | The progress story: score movement, what got fixed/regressed, gate results, cheat catches, flakies, open findings. |
 | `guardian honesty [--html]` | The AI-honesty proof: evidence chain + integrity history + verify delta + committed repro tests → one verdict, or a shareable HTML certificate. |
+| `guardian pen [path] [--fix] [--html] [--json]` | A real penetration test. Static heuristics (secrets, routes, injection/SSRF/XSS rule sets) + a dynamic phase that boots the app under a sandbox which intercepts and records **every** outbound HTTP and spawn. Findings are `PROVEN` only when the sandbox evidence contains the attack canary (SSRF receipt, spawn with the payload marker, reflected marker) — everything else is honestly `indicated`. Nothing reaches the real network; raw sockets are blocked. `--fix` writes failing-then-passing repro tests + `git apply`-able patches. Exit: 0 = clean, 1 = high/critical found, 2 = aborted. |
+| `guardian inspect <pen-id>` | Deep-dives pen findings too: the exact attack fired, the observed response, the sandbox evidence lines, the fix, and the repro. |
+| `guardian repro <pen-id>` | Records a pen finding as a regression test that boots the app under the sandbox itself — fails now, must pass after the fix. |
+| `guardian ready-check [path]` | The "is it worth scanning again?" gate: unchanged tree → exit 0, reuse the baseline; something changed → exit 1. |
+| `guardian budget [path]` | The token-economy bill: scan/verify/pen/repro counts and compute-seconds per reliability run, plus reuse advice for the fix loop. |
+| `guardian scan [path] --reuse` | Returns the sealed baseline when the source tree is unchanged — the fast path for the loop: `ready-check` → `scan --reuse` → work → verify. |
+| `guardian watch [path] [--interval ms]` | The live shield: polls the tree and re-runs the fast static pass the moment a file changes, printing the score delta. |
+| `guardian drive <finding-id> [path]` | Hands one finding to *your own agent* (`GUARDIAN_AGENT` env or `--agent '…{prompt}'`), demands the repro FAIL first → fix → PASS, then verifies. Guardian never edits your code. |
 
 ### The score & badge
 

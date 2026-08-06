@@ -5,6 +5,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { runAllAnalyzers } from "../analyzers/index.js";
 import { runLedgerAnalyzer } from "../analyzers/ledger/index.js";
+import { newestModifiedFile } from "../analyzers/util.js";
 import { correlate } from "../graph/correlate.js";
 import { relevantEntriesForFiles, type MemoryType } from "../memory/store.js";
 import { stampFindings, findingIdFor } from "../repro/ids.js";
@@ -292,6 +293,29 @@ export function renderBox(r: ScanResult): string {
 export interface RunScanOptions {
   ledger?: boolean;
   reliabilityRuns?: number;
+  reuse?: boolean;
+}
+
+/**
+ * Reuse a sealed baseline when nothing in the working tree changed since it
+ * was written. Zero compute, zero model tokens: the exact previous result
+ * (with its evidence chain intact) is returned.
+ */
+export function reuseScan(repo: string): ScanResult | null {
+  const latestPath = path.join(repo, ".guardian", "scan-latest.json");
+  if (!fs.existsSync(latestPath)) return null;
+  let latest: ScanResult;
+  try {
+    latest = JSON.parse(fs.readFileSync(latestPath, "utf8")) as ScanResult;
+  } catch {
+    return null;
+  }
+  const baselineMs = Date.parse(latest.timestamp ?? "");
+  if (!baselineMs || Number.isNaN(baselineMs)) return null;
+  const newest = newestModifiedFile(repo);
+  if (!newest) return latest;
+  if (newest.mtimeMs > baselineMs) return null;
+  return latest;
 }
 
 /**
@@ -345,6 +369,11 @@ export const scan = new Command("scan")
   )
   .option("--json", "print the raw scan result as JSON instead of the boxed report")
   .option(
+    "--reuse",
+    "token-economy: if the working tree is unchanged since the last scan, return the sealed " +
+      "baseline instead of re-running every analyzer (0 model credits, 0 compute).",
+  )
+  .option(
     "--reliability-runs <n>",
     "how many sequential times the test suite runs for flaky detection (default 2; " +
       "1 disables flaky detection, >2 costs an extra full suite run each)",
@@ -353,7 +382,7 @@ export const scan = new Command("scan")
   .action(
     async (
       repoArg: string,
-      options: { ledger?: boolean; json?: boolean; reliabilityRuns?: string },
+      options: { ledger?: boolean; json?: boolean; reliabilityRuns?: string; reuse?: boolean },
     ) => {
       const repo = path.resolve(repoArg);
       const reliabilityRuns = Math.max(1, Math.floor(Number(options.reliabilityRuns) || 2));
@@ -364,6 +393,24 @@ export const scan = new Command("scan")
               `(reliability: ${reliabilityRuns} run${reliabilityRuns > 1 ? "s" : ""}) ...\n`,
           ),
         );
+      }
+
+      // --reuse: unchanged tree → sealed baseline comes back in zero time.
+      if (options.reuse) {
+        const reused = reuseScan(repo);
+        if (reused) {
+          if (options.json) {
+            console.log(JSON.stringify(reused, null, 2));
+          } else {
+            console.log(renderBox(reused));
+            console.log(
+              chalk.dim(
+                `\n[reuse] baseline from ${reused.timestamp} returned — sources unchanged, nothing re-ran.\n`,
+              ),
+            );
+          }
+          return;
+        }
       }
 
       const run = async () => {

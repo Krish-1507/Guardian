@@ -2,6 +2,66 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.0] - 2026-08-06
+
+### Added (the pen-test release)
+
+- **`guardian pen` — a real penetration test, honestly delivered.** Two phases:
+  a static heuristic pass (secrets with entropy checks, route discovery for
+  JS+Python, and rule sets for SQL injection, command injection, path
+  traversal, SSRF, XSS sinks, prototype pollution, weak CORS, missing security
+  headers, cookie flags, rate limiting and more) plus a live dynamic phase that
+  boots the app's own `start` script under a sandbox and fires attack traffic
+  at it. Findings carry severity + a strict confidence level:
+  - `PROVEN` only when the sandbox evidence contains the attack canary: the
+    recorded outbound HTTP receipt for SSRF, a recorded `child_process` spawn
+    containing the payload marker for command injection, or the marker
+    reflected in the response body for XSS. No magic — proof or "indicated".
+  - The sandbox intercepts and records every outbound HTTP (nock + fetch
+    wrapper) so nothing reaches the real network; raw sockets and UDP are
+    blocked; child processes are recorded, never blocked (it is your own start
+    script). Every proof line is sealed into `.guardian/pen-*.json`.
+  - `--fix` writes one failing-then-passing repro test per fixable finding
+    plus deterministic `.diff` patches (e.g. `app.disable("x-powered-by")`,
+    helmet) that you apply with `git apply` — Guardian never edits your source.
+  - Exit contract: `0` = no high/critical, `1` = high/critical present,
+    `2` = dynamic aborted with nothing found.
+- **`guardian ready-check` — the "is it worth scanning again?" gate.** Compares
+  the newest modified file against the sealed baseline timestamp: `0` = the
+  tree is unchanged, reuse the baseline; `1` = re-scan needed. `--json` for
+  scripts.
+- **`guardian budget` — the token-economy bill.** Counts every scan, verify,
+  pen run, repro test and ledger operation from the evidence history and
+  estimates compute seconds per reliability run — Guardian's honest wall-clock
+  proxy for model-token spend, plus reuse advice.
+- **`guardian scan --reuse`** — returns the sealed baseline (score, findings,
+  everything) without re-running anything when the source tree is unchanged.
+  The loop that reads this: `ready-check` → `scan --reuse` → work → verify.
+- **`guardian watch`** — the live shield. Polls the tree (default 10s, min 2s)
+  and re-runs the fast static pass the moment a file changes, printing the
+  score delta and new security issues.
+- **`guardian drive <finding-id>`** — hands one finding to *your own agent*
+  (via `GUARDIAN_AGENT` env or `--agent` with a `{prompt}` placeholder),
+  instructing it to make the repro test fail first, then pass, then verify.
+  Guardian verifies the result itself and never edits your code.
+
+### Changed
+
+- `guardian repro` now also understands pen findings (`pen-latest.json`):
+  `guardian repro pen-xxxx` records the exploit as a failing-then-passing
+  regression test that boots the app under the pen sandbox itself.
+- `guardian inspect` deep-dives pen findings: the exact attack fired, the
+  observed response, the sandbox evidence lines, the suggested fix and the
+  repro command.
+- `templates/guardian.prompt.md`: new `--pen` mode block (run the pen, print
+  the box, inspect, fix one finding at a time through the repro FAIL→PASS
+  loop, re-check) and the **k2 token economy** step (ready-check before every
+  re-scan, `scan --reuse` in the loop, verify during iteration with full
+  reliability runs only on the final pass, stop when re-scanning without
+  edits).
+- `package.json`: `typecheck` script added; `files` whitelist ships the pen
+  sandbox template.
+
 ## [0.7.0] - 2026-08-05
 
 ### Added (the viral release)

@@ -3,7 +3,9 @@ import path from "node:path";
 import type { ScanResult } from "../analyzers/types.js";
 import { resolveFinding, enumerateFindings } from "./ids.js";
 import { generateRepro, type ReproOutcome } from "./generate.js";
+import { generatePenRepro } from "./pen.js";
 import { runRepro, type ReproRunResult } from "./run.js";
+import { loadPenLatest, resolvePenFinding } from "../pen/store.js";
 
 /**
  * repro/index.ts — `guardian repro <finding-id>`:
@@ -41,25 +43,46 @@ export async function repro(
   opts: { writeOnly?: boolean } = {},
 ): Promise<ReproResult> {
   const scan = loadScan(repo);
-  if (!scan) {
-    return { status: "no-scan", reason: "no .guardian/scan-latest.json — run `guardian scan` first" };
+  const pen = loadPenLatest(repo);
+  if (!scan && !pen) {
+    return {
+      status: "no-scan",
+      reason: "no .guardian/scan-latest.json or pen-latest.json — run `guardian scan` or `guardian pen` first",
+    };
   }
 
-  const finding = resolveFinding(scan, findingId);
+  const finding = scan ? resolveFinding(scan, findingId) : null;
+  const penFinding = !finding && pen ? resolvePenFinding(pen, findingId) : null;
+
+  if (penFinding) {
+    const outcome: ReproOutcome = generatePenRepro(repo, penFinding);
+    if (!outcome.ok || !outcome.file) {
+      return { status: "refused", findingId, reason: outcome.reason ?? "generator produced no test file" };
+    }
+    if (opts.writeOnly) {
+      return { status: "generated", findingId, file: outcome.file };
+    }
+    const ran = await runRepro(repo, outcome.file);
+    return { status: "generated-and-ran", findingId, file: outcome.file, ran };
+  }
+
   if (!finding) {
-    const available = enumerateFindings(scan)
+    const available = [
+      ...(scan ? enumerateFindings(scan) : []),
+      ...(pen ? pen.findings ?? [] : []),
+    ]
       .slice(0, 25)
-      .map((f) => `  ${f.id}  ${f.source}/${f.type} — ${f.description}`)
+      .map((f: any) => `  ${f.id}  ${f.source} — ${f.title ?? f.description}`)
       .join("\n");
     return {
       status: "not-found",
       reason:
-        `no finding with id "${findingId}" in .guardian/scan-latest.json. ` +
+        `no finding with id "${findingId}" in scan-latest.json or pen-latest.json. ` +
         (available ? `\nRepro-able finding ids:\n${available}` : ""),
     };
   }
 
-  const outcome: ReproOutcome = generateRepro(repo, scan, finding);
+  const outcome: ReproOutcome = generateRepro(repo, scan as ScanResult, finding);
   if (!outcome.ok || !outcome.file) {
     return {
       status: "refused",
