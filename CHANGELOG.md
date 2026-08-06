@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- **README overhaul.** The README now opens with a standout **"See it in 90
+  seconds"** hook (the scripted cheat-catch arc), a "loop at a glance" ASCII
+  diagram, and a complete **"Every command"** reference — all 23 commands
+  grouped by job (measure / fix loop / integrity & anti-cheat / penetration
+  test / proof & reports / setup), so every command is one glance away.
+- **`docs/demo.md`** gained **Act 0 — the 90-second wow** (the cheat-demo arc,
+  moved from the footnote to the opening), and **`LAUNCH.md`** now leads its
+  "Show, don't tell" section with the cheat-catch demo.
+
 ## [0.8.3] - 2026-08-06
 
 ### Fixed

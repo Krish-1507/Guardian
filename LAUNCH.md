@@ -96,6 +96,10 @@ in the code before you watch it get fixed.
 
 ## Show, don't tell
 
+- **Cheat-catch (90 s):** the scripted moment where a lazy agent tries to fake a green
+  suite — and the gate catches it with exit 1, then exit 2. Run
+  `node scripts/cheat-demo.cjs` (or point it at a local build with
+  `GUARDIAN_CLI="node /path/to/dist/cli.js"`). Deterministic, live-room safe.
 - **Demo (2 min):** the box above is real output — or run `npx cli-guardian demo` locally.
 - **Report sample:** a full `GUARDIAN_REPORT.md` is generated after every loop.
 - **CI:** guardian runs in CI too — `guardian ci` diffs a PR against its base branch and

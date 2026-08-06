@@ -7,6 +7,29 @@ Total time: ~2 minutes. You need Node 22+ and git. No AI tool required.
 
 ---
 
+## Act 0 — the 90-second wow (skip if you're on a strict 2 minutes)
+
+This is the part people screenshot — a lazy agent getting caught **twice**:
+
+```bash
+node scripts/cheat-demo.cjs   # from the repo checkout; also ships in the npm package
+                              # (node_modules/cli-guardian/scripts/cheat-demo.cjs)
+# GUARDIAN_CLI="node /path/to/dist/cli.js" → run it against a local build
+```
+
+A fully scripted, deterministic arc against a real repo with a real failing
+jest test:
+
+```
+ACT 1  honest baseline              →  1 failed test, scanned and sealed
+ACT 2  agent focuses passing tests  →  GATE: SUSPICIOUS     (exit 1) — blocked
+ACT 3  agent deletes the test       →  GATE: CONFIRMED_CHEAT (exit 2) — blocked
+       (tamper-evident evidence chain verifies the whole way)
+```
+
+Safe to run in a live room, and it's the whole product in miniature. Then
+continue to Act 1.
+
 ## Act 1 — a broken repo, scored honestly (0:00–0:40)
 
 ```bash
@@ -85,11 +108,7 @@ npx cli-guardian verify   # VERIFIED / NOT VERIFIED — no grey
 - `npx cli-guardian honesty` — the evidence report: every number traced to a
   sealed file.
 - `guardian gate` / `guardian ci` — the same contract as a CI gate.
-- `node scripts/cheat-demo.cjs` — the 90-second cheat-catch demo: a scripted
-  arc where a lazy agent focuses the suite on the passing tests (gate blocks,
-  exit 1) then deletes the failing test (gate blocks, exit 2) — the
-  tamper-evident baseline verifies the whole way. Point it at a local build
-  with `GUARDIAN_CLI="node /path/to/dist/cli.js"`.
+- `node scripts/cheat-demo.cjs` — **Act 0** above: the 90-second cheat-catch arc.
 - `npx cli-guardian watch` / `ready-check` / `budget` — the token economy
   that keeps the agent loop cheap (reuse sealed baselines, skip waste).
 - `docs/` — this repo's CI runs the patch-validity + evidence regression
