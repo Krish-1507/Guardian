@@ -26,13 +26,6 @@ export interface PenFixOutcome {
 }
 
 /* ------------------------------------------------------------------ */
-/* unified-diff builders: zero-context insertion hunks. `git apply`   */
-/* accepts `@@ -N,0 +M,K @@` (pure insertions) with no context lines, */
-/* so the math is exact by construction — no context matching, no     */
-/* hunk-header string surgery.                                         */
-/* ------------------------------------------------------------------ */
-
-/* ------------------------------------------------------------------ */
 /* unified-diff builder: pure-insertion hunks in git's canonical form. */
 /* Guardian's deterministic fixes NEVER delete user lines — they only  */
 /* insert. In the hunk, every ` ` (context) line counts toward BOTH    */
@@ -41,7 +34,7 @@ export interface PenFixOutcome {
 /* parses unambiguously (including UTF-8 BOM'd first lines).           */
 /* ------------------------------------------------------------------ */
 
-function insertionPatch(rel: string, oldLines: string[], inserts: { after: number; lines: string[] }[]): string {
+export function insertionPatch(rel: string, oldLines: string[], inserts: { after: number; lines: string[] }[]): string {
   if (inserts.length === 0) return "";
   const oldLen = oldLines.length;
   const sorted = [...inserts].sort((a, b) => a.after - b.after);

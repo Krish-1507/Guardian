@@ -103,6 +103,45 @@ in the code before you watch it get fixed.
 
 [![CI](https://github.com/Krish-1507/Guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/Krish-1507/Guardian/actions/workflows/ci.yml)
 
+## How we prioritized
+
+The challenge asks for core logic over surface polish, so every feature was
+ranked against one question: **does this make it harder for an agent to lie
+about being done?** Nothing that failed that test shipped — and some of it
+was built and deleted.
+
+- **Phase 1 — the referee.** Deterministic scan + the exit-code contract
+  (0 clean / 1 issues / 2 suspicious). Without this there is no product, so
+  it came first and took longest. No scoring yet — just honest numbers.
+- **Phase 2 — proof of the numbers.** The tamper-evident evidence chain:
+  every scan is sealed, edits to a sealed report are detectable, `gate`
+  exits 2 on confirmed tampering. Trusting a referee is only sound if the
+  referee can't be edited. (The first integrity check was a shell script;
+  it was deleted and rebuilt in TypeScript the moment it couldn't prove its
+  own integrity.)
+- **Phase 3 — the loop economics.** `watch`/`ready-check`/`budget`/
+  `scan --reuse`: an agent loop that re-runs everything on every iteration
+  burns credits and patience; a loop that knows when nothing changed and
+  returns the sealed baseline in zero time is what makes the loop usable at
+  all. This shipped before "prettier reports".
+- **Phase 4 — the last mile of honesty: prove it live.** `pen` boots the
+  app under a sandbox and attacks it for real — and only then are findings
+  called **proven**. Each gets a repro test that FAILS on the bug, and
+  `drive` makes the agent prove FAIL → PASS. `pen --fix` only auto-generates
+  patches that are provably safe (pure insertions) and regression-tests that
+  every patch passes `git apply`.
+
+**Deliberately not built** (and why): no cloud/dashboard (the numbers are
+local and auditable — that's the point), no plugin marketplace (the
+`/guardian` command installs from one template), no auth/teams (this is a
+quality gate, not a SaaS), and no "AI score" that mixes model output into
+the measurement (the referee must be deterministic to be a referee). Each
+was sketched, found to dilute the thesis, and cut.
+
+The git history shows the cuts in order: `scan` → `try`/`gate`/evidence →
+`share`/`honesty` → `pen`/`watch`/`drive`/`budget`. Four phases, each one a
+layer of the same promise: *the agent finally has a referee.*
+
 ## Built for the boring, important stuff
 
 The pitch isn't "AI writes your code." It's: **the agent finally has a referee.** A loop

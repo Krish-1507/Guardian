@@ -29,6 +29,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Regression suite: patch-validity tests generate diffs and assert real
+      # `git apply --check` on clean/BOM'd files (guards the "corrupt patch"
+      # bug class) — runs on both OSes because git apply parsing is the point.
+      - name: Test (patch validity + unit)
+        run: npm test
+
       # The smoke test is the regression guard for the Windows bugs fixed in
       # 0.1.0/0.1.1: execa-based tool spawning (npm.cmd/.cmd shim resolution)
       # and repo-relative test paths (8.3 short-path jest rootDir mismatch).
