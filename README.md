@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/media/guardian-logo.png" alt="Guardian" width="380">
+</p>
+
 # Guardian CLI
 
 **The agent finally has a referee it can't cheat.** Guardian is a CLI that scans your repo,
@@ -456,3 +460,11 @@ how to open a PR. For the launch notes and the "why", read [LAUNCH.md](LAUNCH.md
 ## License
 
 [MIT](LICENSE)
+
+---
+
+<p align="center">
+  <img src="docs/media/guardian-icon.png" alt="Guardian icon" width="64">
+</p>
+
+<p align="center">Built by <b>Krish J</b> — if it can referee itself, it can referee your agent.</p>
