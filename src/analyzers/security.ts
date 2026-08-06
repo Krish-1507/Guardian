@@ -10,6 +10,7 @@ const AUDIT_TTL_MS = 24 * 60 * 60 * 1000;
 export async function analyzeSecurity(repo: string): Promise<SecurityResult> {
   const lang = detectLanguage(repo);
   const issues: ScanIssue[] = [];
+  let depNote: string | undefined;
 
   if (lang === "js") {
     // npm audit exits 1 when vulnerabilities exist but still prints the full
@@ -27,6 +28,15 @@ export async function analyzeSecurity(repo: string): Promise<SecurityResult> {
     if (commandExists("pip-audit")) {
       const r = await safeExecAsync("pip-audit", ["-f", "json"], repo, 120000);
       if (r.stdout) issues.push(...parsePipAudit(r.stdout));
+    } else {
+      // pip-audit missing — OSV understands pyproject.toml / poetry.lock etc.
+      issues.push(...(await osvScan(repo)));
+    }
+  } else if (lang !== "unknown") {
+    if (commandExists("osv-scanner")) {
+      issues.push(...(await osvScan(repo)));
+    } else {
+      depNote = `install osv-scanner (go install github.com/google/osv-scanner/cmd/osv-scanner@latest) to scan ${lang} dependencies`;
     }
   }
 
@@ -64,6 +74,9 @@ export async function analyzeSecurity(repo: string): Promise<SecurityResult> {
       note: "unsupported language / no security tooling",
       issues: [],
     };
+  }
+  if (issues.length === 0 && depNote) {
+    return { status: "skipped", note: depNote, issues: [] };
   }
 
   return { status: "ok", issues };
@@ -114,6 +127,115 @@ async function npmAudit(repo: string): Promise<string | null> {
     }
   }
   return r.stdout || null;
+}
+
+/** Root-level manifests/lockfiles OSV understands (nested ones are scanned too). */
+const OSV_ROOT_LOCKFILES = [
+  "go.mod",
+  "go.sum",
+  "Cargo.lock",
+  "Cargo.toml",
+  "pubspec.lock",
+  "pubspec.yaml",
+  "pom.xml",
+  "build.gradle",
+  "build.gradle.kts",
+  "packages.lock.json",
+  "requirements.txt",
+  "pyproject.toml",
+  "poetry.lock",
+];
+
+/**
+ * Universal dependency scan via google/osv-scanner (`scan --format json <dir>`
+ * walks the tree for supported manifests: go.mod, Cargo.lock, pubspec.lock,
+ * pom.xml, build.gradle, *.csproj, ...). Result is cached like npm-audit,
+ * keyed on root lockfile names + sizes.
+ */
+async function osvScan(repo: string): Promise<ScanIssue[]> {
+  const lockKey = OSV_ROOT_LOCKFILES.filter((f) => fs.existsSync(path.join(repo, f)))
+    .map((f) => {
+      try {
+        return `${f}:${fs.statSync(path.join(repo, f)).size}`;
+      } catch {
+        return f;
+      }
+    })
+    .join("|");
+  const hash = crypto.createHash("sha1").update(lockKey || "dir").digest("hex").slice(0, 12);
+
+  const cacheDir = path.join(repo, ".guardian", "cache");
+  fs.mkdirSync(cacheDir, { recursive: true });
+  const cachePath = path.join(cacheDir, `osv-${hash}.json`);
+  if (fs.existsSync(cachePath)) {
+    try {
+      const cached = JSON.parse(fs.readFileSync(cachePath, "utf8")) as {
+        at?: string;
+        stdout?: string;
+      };
+      if (
+        cached &&
+        typeof cached.stdout === "string" &&
+        typeof cached.at === "string" &&
+        Date.now() - Date.parse(cached.at) < AUDIT_TTL_MS
+      ) {
+        return parseOsvScanner(cached.stdout);
+      }
+    } catch {
+      /* stale or corrupt — re-scan */
+    }
+  }
+
+  const r = await safeExecAsync("osv-scanner", ["scan", "--format", "json", repo], repo, 180000);
+  if (r.stdout) {
+    try {
+      fs.writeFileSync(
+        cachePath,
+        JSON.stringify({ at: new Date().toISOString(), stdout: r.stdout }),
+      );
+    } catch {
+      /* cache write is best-effort */
+    }
+    return parseOsvScanner(r.stdout);
+  }
+  return [];
+}
+
+function parseOsvScanner(stdout: string): ScanIssue[] {
+  const issues: ScanIssue[] = [];
+  let json: any;
+  try {
+    json = JSON.parse(stdout);
+  } catch {
+    return issues;
+  }
+  for (const res of json?.results ?? []) {
+    for (const pkg of res?.packages ?? []) {
+      const name: string = pkg?.package?.name ?? "unknown";
+      const version: string = pkg?.package?.version ?? "";
+      for (const v of pkg?.vulnerabilities ?? []) {
+        // OSV advisories carry CVSS scores; map to the 4-level severity scale
+        // the rest of the report uses.
+        const sev = v?.severity?.[0];
+        let severity = "medium";
+        if (typeof sev?.score === "string" || typeof sev?.score === "number") {
+          const score = parseFloat(String(sev.score));
+          if (!Number.isNaN(score)) {
+            severity =
+              score >= 9 ? "critical" : score >= 7 ? "high" : score >= 4 ? "medium" : "low";
+          }
+        }
+        const summary = (v?.summary ?? "").trim();
+        const desc = `${name}${version ? `@${version}` : ""} ${v?.id ?? ""}`.trim();
+        issues.push({
+          type: "dependency",
+          severity,
+          description: summary ? `${desc} — ${summary}` : desc,
+        });
+      }
+    }
+  }
+  return issues;
 }
 
 function parseNpmAudit(stdout: string): ScanIssue[] {

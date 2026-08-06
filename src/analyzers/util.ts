@@ -2,7 +2,15 @@ import { execaSync, execa, type SyncResult } from "execa";
 import fs from "node:fs";
 import path from "node:path";
 
-export type Language = "js" | "python" | "unknown";
+export type Language =
+  | "js"
+  | "python"
+  | "go"
+  | "rust"
+  | "dart"
+  | "dotnet"
+  | "java"
+  | "unknown";
 
 /**
  * All external tool invocation goes through execa, which resolves PATH /
@@ -98,6 +106,21 @@ export function detectLanguage(repo: string): Language {
     fs.existsSync(path.join(repo, "setup.py"))
   )
     return "python";
+  if (fs.existsSync(path.join(repo, "go.mod"))) return "go";
+  if (fs.existsSync(path.join(repo, "Cargo.toml"))) return "rust";
+  if (
+    fs.existsSync(path.join(repo, "pubspec.yaml")) ||
+    fs.existsSync(path.join(repo, "pubspec.lock"))
+  )
+    return "dart";
+  if (
+    fs.existsSync(path.join(repo, "pom.xml")) ||
+    fs.existsSync(path.join(repo, "build.gradle")) ||
+    fs.existsSync(path.join(repo, "build.gradle.kts"))
+  )
+    return "java";
+  // .NET projects are commonly nested in src/ folders, so probe the tree.
+  if (walkFiles(repo, [".csproj", ".fsproj", ".vbproj"]).length > 0) return "dotnet";
   return "unknown";
 }
 

@@ -2,7 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LedgerEvidence, ScanResult } from "../analyzers/types.js";
-import { detectTestFramework, reproExtension, type TestFramework } from "./framework.js";
+import {
+  detectTestFramework,
+  reproDir,
+  reproExtension,
+  type TestFramework,
+} from "./framework.js";
 import { reproSlug, type ReproFinding } from "./ids.js";
 
 export interface ReproOutcome {
@@ -27,9 +32,19 @@ function writeTest(
 ): string {
   const ext = reproExtension(framework);
   const fileName = `guardian-repro-${slug}${ext}`;
-  const abs = path.join(repo, fileName);
+  // cargo integration tests must be in tests/, flutter tests in test/.
+  const dir = reproDir(framework);
+  const abs = dir ? path.join(repo, dir, fileName) : path.join(repo, fileName);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
   fs.writeFileSync(abs, content, "utf8");
   return path.relative(repo, abs);
+}
+
+/** Non-Node stacks generate their own native repro files; JS/TS generators apply otherwise. */
+const JS_LIKE_FRAMEWORKS: TestFramework[] = ["jest", "vitest", "node-test", "pytest"];
+
+function nativeOnly(framework: TestFramework): boolean {
+  return !JS_LIKE_FRAMEWORKS.includes(framework);
 }
 
 /** Framework-aware preamble: node-test (ESM) vs jest/vitest (CJS). */
@@ -437,9 +452,6 @@ function perfRepro(
   finding: ReproFinding,
   scan: ScanResult,
 ): ReproOutcome {
-  if (framework === "pytest") {
-    return { ok: false, reason: "perf repro currently supports Node build scripts only" };
-  }
   const perf = scan.perf;
   if (perf.buildTimeMs == null) {
     return {
@@ -447,10 +459,121 @@ function perfRepro(
       reason: "Phase-1 scan had no build baseline (no build script / perf skipped) — nothing to guard",
     };
   }
+  if (framework === "pytest") {
+    return { ok: false, reason: "perf repro currently supports Node build scripts only" };
+  }
   const limitMs = Math.max(1, Math.ceil(perf.buildTimeMs * 1.5));
+  const slug = reproSlug(finding);
+
+  // Native build-guard repros for non-Node stacks. These are self-contained:
+  // they spawn the stack's own build command and assert the wall-clock time
+  // stays under the Phase-1 baseline.
+  if (framework === "go") {
+    const header = [
+      `// Guardian perf repro test — finding ${finding.id}`,
+      `// Linked from .guardian/scan-latest.json (perf baseline: build ${perf.buildTimeMs}ms).`,
+      `//`,
+      `// Regression guard: the build must stay under the Phase-1 baseline threshold.`,
+      `// Note: go test runs with cwd = this package dir, so the build is run with an`,
+      `// explicit Dir set to the repo root captured at generation time.`,
+    ].join("\n");
+    const body = [
+      `package guardianrepro`,
+      ``,
+      `import (`,
+      `	"os/exec"`,
+      `	"testing"`,
+      `	"time"`,
+      `)`,
+      ``,
+      `func TestBuildStaysUnderBaseline(t *testing.T) {`,
+      `	start := time.Now()`,
+      `	cmd := exec.Command("go", "build", "./...")`,
+      `	cmd.Dir = ${JSON.stringify(repo)}`,
+      `	out, err := cmd.CombinedOutput()`,
+      `	took := time.Since(start)`,
+      `	if err != nil {`,
+      `		t.Fatalf("go build failed: %v\\n%s", err, out)`,
+      `	}`,
+      `	if took > ${limitMs}*time.Millisecond {`,
+      `		t.Fatalf("build took %v, over the Phase-1 baseline threshold of ${limitMs}ms", took)`,
+      `	}`,
+      `}`,
+    ].join("\n");
+    const file = writeTest(repo, "go", slug, header + "\n\n" + body);
+    return { ok: true, file, framework: "go" };
+  }
+  if (framework === "cargo") {
+    const header = [
+      `// Guardian perf repro test — finding ${finding.id}`,
+      `// Linked from .guardian/scan-latest.json (perf baseline: build ${perf.buildTimeMs}ms).`,
+      `//`,
+      `// Regression guard: the build must stay under the Phase-1 baseline threshold.`,
+    ].join("\n");
+    const body = [
+      `use std::process::Command;`,
+      `use std::time::Instant;`,
+      ``,
+      `#[test]`,
+      `fn build_stays_under_baseline() {`,
+      `	let start = Instant::now();`,
+      `	let out = Command::new("cargo").arg("build").output().expect("cargo build failed");`,
+      `	let took = start.elapsed();`,
+      `	assert!(`,
+      `		out.status.success(),`,
+      `		"cargo build failed: {}",`,
+      `		String::from_utf8_lossy(&out.stderr),`,
+      `	);`,
+      `	assert!(`,
+      `		took.as_millis() <= ${limitMs},`,
+      `		"build took {:?}, over the Phase-1 baseline threshold of ${limitMs}ms",`,
+      `		took,`,
+      `	);`,
+      `}`,
+    ].join("\n");
+    const file = writeTest(repo, "cargo", slug, header + "\n\n" + body);
+    return { ok: true, file, framework: "cargo" };
+  }
+  if (framework === "flutter") {
+    const header = [
+      `// Guardian perf repro test — finding ${finding.id}`,
+      `// Linked from .guardian/scan-latest.json (perf baseline: build ${perf.buildTimeMs}ms).`,
+      `//`,
+      `// Regression guard: the build must stay under the Phase-1 baseline threshold.`,
+    ].join("\n");
+    const body = [
+      `import 'dart:io';`,
+      `import 'package:flutter_test/flutter_test.dart';`,
+      ``,
+      `void main() {`,
+      `  test('build stays under baseline', () async {`,
+      `    final sw = Stopwatch()..start();`,
+      `    final r = await Process.run('flutter', ['build', 'web']);`,
+      `    sw.stop();`,
+      `    expect(r.exitCode, 0, reason: 'flutter build failed: \${r.stderr}');`,
+      `    expect(`,
+      `      sw.elapsedMilliseconds,`,
+      `      lessThanOrEqualTo(${limitMs}),`,
+      `      reason: 'build took \${sw.elapsedMilliseconds}ms, over the Phase-1 baseline threshold of ${limitMs}ms',`,
+      `    );`,
+      `  });`,
+      `}`,
+    ].join("\n");
+    const file = writeTest(repo, "flutter", slug, header + "\n\n" + body);
+    return { ok: true, file, framework: "flutter" };
+  }
+  if (framework === "dotnet" || framework === "maven" || framework === "gradle") {
+    return {
+      ok: false,
+      reason:
+        `a ${framework} perf guard must live inside an existing test project (there is no ` +
+        "project-agnostic location for a standalone test file); add a build-duration assertion " +
+        "to your test project manually and commit it as a guardian-repro guard.",
+    };
+  }
+
   const bundleLimit =
     perf.bundleSizeBytes != null ? Math.max(1, Math.ceil(perf.bundleSizeBytes * 1.1)) : null;
-  const slug = reproSlug(finding);
   const header = [
     `// Guardian perf repro test — finding ${finding.id}`,
     `// Linked from .guardian/scan-latest.json (perf baseline: build ${perf.buildTimeMs}ms` +
@@ -658,6 +781,18 @@ export function generateRepro(
   finding: ReproFinding,
 ): ReproOutcome {
   const framework = detectTestFramework(repo) ?? "node-test";
+  // Go/Rust/Flutter/.NET/Java repros need language-native generators (see the
+  // perf repro below, and per-finding recipes added as they are proven). Refuse
+  // rather than emit a JS test file into a non-JS repo.
+  if (nativeOnly(framework) && finding.source !== "perf") {
+    return {
+      ok: false,
+      reason:
+        `native repro generation for ${framework} repos currently covers the perf guard only; ` +
+        "other finding types need a proven language-native recipe — add one in src/repro/generate.ts " +
+        "or hand-write the test (go: standalone _test.go, cargo: tests/, flutter: test/) and re-run.",
+    };
+  }
   switch (finding.source) {
     case "ledger":
       return ledgerRepro(repo, framework, finding);

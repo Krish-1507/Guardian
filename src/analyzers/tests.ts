@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { commandExists, detectLanguage, safeExecAsync } from "./util.js";
+import { nonJsToolchainPresent, runNonJsSuite } from "./suiteRunner.js";
 import type { TestsResult } from "./types.js";
 
 export async function analyzeTests(repo: string): Promise<TestsResult> {
@@ -13,6 +14,32 @@ export async function analyzeTests(repo: string): Promise<TestsResult> {
     failed: 0,
     durationMs: 0,
   };
+
+  if (lang === "go" || lang === "rust" || lang === "dart" || lang === "dotnet" || lang === "java") {
+    if (!nonJsToolchainPresent(lang, repo)) {
+      return { ...empty, note: `no ${lang} test toolchain found on PATH` };
+    }
+    const sr = await runNonJsSuite(repo);
+    if (!sr) return { ...empty, note: `no tests discovered by the ${lang} runner` };
+    if (sr.total === 0) {
+      return {
+        status: "error",
+        note: sr.unparseable ?? "runner produced no results",
+        total: 0,
+        passed: 0,
+        failed: 0,
+        durationMs: sr.durationMs,
+      };
+    }
+    return {
+      status: "ok",
+      framework: sr.framework,
+      total: sr.total,
+      passed: sr.passed,
+      failed: sr.failed,
+      durationMs: sr.durationMs,
+    };
+  }
 
   if (lang === "python") {
     if (!commandExists("pytest")) return empty;

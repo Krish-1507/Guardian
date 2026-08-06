@@ -1,3 +1,5 @@
+import type { Language } from "./util.js";
+
 export interface ScanIssue {
   type: string;
   severity: string;
@@ -207,7 +209,7 @@ export interface ScanResult {
   repo: string;
   /** `try` was produced by the quick `guardian try` pass (tests/perf/reliability intentionally skipped). */
   mode?: "full" | "try";
-  language: "js" | "python" | "unknown";
+  language: Language;
   dependencyGraph: DependencyGraphResult;
   security: SecurityResult;
   duplication: DuplicationResult;

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { commandExists, safeExecAsync, walkFiles, lineOf } from "./util.js";
+import { commandExists, safeExecAsync, walkFiles, lineOf, detectLanguage } from "./util.js";
+import { runNonJsSuite } from "./suiteRunner.js";
 import type { FlakyTest, ReliabilityResult, ScanIssue } from "./types.js";
 
 /** Only bother with flakiness detection when the suite is fast enough. */
@@ -56,13 +57,13 @@ export async function analyzeReliability(
     return raceSmells.length > 0
       ? {
           status: "ok",
-          note: "no runnable test suite (jest/vitest/pytest); race-smell heuristic only",
+          note: "no runnable test suite; race-smell heuristic only",
           runs: 0,
           durationMs: 0,
           flakyTests: [],
           raceSmells,
         }
-      : skipped("no runnable test suite (jest/vitest/pytest)");
+      : skipped("no runnable test suite");
   }
 
   if (first.durationMs >= MAX_SUITE_MS) {
@@ -118,8 +119,29 @@ interface RunResult {
 }
 
 function runSuite(repo: string): Promise<RunResult | null> {
+  const lang = detectLanguage(repo);
+  if (lang === "unknown") return Promise.resolve(null);
+
+  if (lang === "python") return commandExists("pytest") ? runPytest(repo) : Promise.resolve(null);
+
+  if (lang !== "js") {
+    // Go/Rust/Flutter/.NET/Java: shared runner, per-test outcomes when the
+    // runner exposes them (go -json, cargo json, flutter --machine), whole-suite
+    // pseudo-test otherwise (dotnet/maven/gradle text/XML summaries).
+    return runNonJsSuite(repo).then((sr) =>
+      sr
+        ? {
+            tests: sr.tests,
+            passed: sr.passed,
+            failed: sr.failed,
+            durationMs: sr.durationMs,
+          }
+        : null,
+    );
+  }
+
   if (!fs.existsSync(path.join(repo, "package.json"))) {
-    return commandExists("pytest") ? runPytest(repo) : Promise.resolve(null);
+    return Promise.resolve(null);
   }
   let pkg: any = {};
   try {

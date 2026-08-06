@@ -1,14 +1,30 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execa } from "execa";
+import { walkFiles } from "../analyzers/util.js";
 
-export type TestFramework = "jest" | "vitest" | "node-test" | "pytest";
+export type TestFramework =
+  | "jest"
+  | "vitest"
+  | "node-test"
+  | "pytest"
+  | "go"
+  | "cargo"
+  | "flutter"
+  | "dotnet"
+  | "maven"
+  | "gradle";
 
 /**
  * framework.ts — figure out how the target repo runs tests, and run a single
  * repro test file through that runner. Guardian never invents a test setup; it
  * uses whatever the repo already has (jest/vitest/pytest), falling back to
  * Node's built-in `node --test` for JS repos with no framework (zero deps).
+ * For non-Node stacks the native runner is used: `go test` for a standalone
+ * repro `_test.go`, `cargo test --test <name>` for a tests/ integration test,
+ * `flutter test <file>` for a `*_test.dart`, and the full `dotnet test` /
+ * `mvn test` / gradle `test` for projects (those runners have no single-file
+ * mode, so a repro there exercises the whole suite).
  */
 
 export function detectTestFramework(repo: string): TestFramework | null {
@@ -32,6 +48,22 @@ export function detectTestFramework(repo: string): TestFramework | null {
   ) {
     return "pytest";
   }
+  if (fs.existsSync(path.join(repo, "go.mod"))) return "go";
+  if (fs.existsSync(path.join(repo, "Cargo.toml"))) return "cargo";
+  if (
+    fs.existsSync(path.join(repo, "pubspec.yaml")) ||
+    fs.existsSync(path.join(repo, "pubspec.lock"))
+  ) {
+    return "flutter";
+  }
+  if (walkFiles(repo, [".csproj", ".fsproj", ".vbproj"]).length > 0) return "dotnet";
+  if (fs.existsSync(path.join(repo, "pom.xml"))) return "maven";
+  if (
+    fs.existsSync(path.join(repo, "build.gradle")) ||
+    fs.existsSync(path.join(repo, "build.gradle.kts"))
+  ) {
+    return "gradle";
+  }
   return null;
 }
 
@@ -52,7 +84,26 @@ export function reproExtension(framework: TestFramework): string {
       return ".test.mjs";
     case "pytest":
       return ".py";
+    case "go":
+      return "_test.go";
+    case "flutter":
+      return "_test.dart";
+    case "cargo":
+      return ".rs";
+    case "dotnet":
+      return ".cs";
+    case "maven":
+    case "gradle":
+      return ".java";
   }
+}
+
+/** Where generated repro files must live so the native runner picks them up. */
+export function reproDir(framework: TestFramework): string {
+  if (framework === "cargo") return "tests";
+  if (framework === "flutter") return "test";
+  if (framework === "go") return "guardianrepro";
+  return "";
 }
 
 /** Run a single test file and report pass/fail. */
@@ -101,6 +152,42 @@ export async function runTestFile(
       args = ["-m", "pytest", file, "-q"];
       break;
     }
+    case "go": {
+      // A standalone `_test.go` is a complete package on its own, so `go test
+      // <file>` compiles just that file against the module.
+      cmd = "go";
+      args = ["test", file];
+      break;
+    }
+    case "cargo": {
+      const name = path.basename(file).replace(/\.rs$/, "");
+      cmd = "cargo";
+      args = ["test", "--test", name];
+      break;
+    }
+    case "flutter": {
+      cmd = "flutter";
+      args = ["test", file];
+      break;
+    }
+    case "dotnet": {
+      // dotnet test has no single-file mode — a repro here runs the whole suite.
+      cmd = "dotnet";
+      args = ["test"];
+      break;
+    }
+    case "maven": {
+      cmd = "mvn";
+      args = ["test"];
+      break;
+    }
+    case "gradle": {
+      const wrapperName = process.platform === "win32" ? "gradlew.bat" : "gradlew";
+      const wrapper = path.join(repo, wrapperName);
+      cmd = fs.existsSync(wrapper) ? wrapper : "gradle";
+      args = ["test"];
+      break;
+    }
     case "node-test":
     default: {
       cmd = "node";
@@ -141,6 +228,18 @@ export function frameworkLabel(framework: TestFramework | null): string {
       return "pytest";
     case "node-test":
       return "node --test (built-in)";
+    case "go":
+      return "go test";
+    case "cargo":
+      return "cargo test";
+    case "flutter":
+      return "flutter test";
+    case "dotnet":
+      return "dotnet test";
+    case "maven":
+      return "maven (surefire)";
+    case "gradle":
+      return "gradle";
     default:
       return "unknown";
   }

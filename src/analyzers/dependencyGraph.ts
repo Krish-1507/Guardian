@@ -25,7 +25,7 @@ export interface BuiltEdges {
  */
 export function buildEdges(repo: string): BuiltEdges | null {
   const lang = detectLanguage(repo);
-  if (lang === "unknown") return null;
+  if (lang !== "js" && lang !== "python") return null;
 
   if (lang === "js" && commandExists("madge")) {
     const r = safeExec(
