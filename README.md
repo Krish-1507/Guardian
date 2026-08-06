@@ -140,8 +140,6 @@ Every clip below is real command output — the only thing that was trimmed is d
   <img src="docs/media/guardian-watch.gif" alt="guardian watch — live score delta when a file changes" width="700">
 </p>
 
-The full scripted run is in [`docs/feature-tour.md`](docs/feature-tour.md).
-
 ---
 
 ## See it in 90 seconds
@@ -271,10 +269,12 @@ editing, knowing it's being watched.
 ### The scan
 
 `guardian scan` runs a bunch of checks on your repo: circular imports, known security
-issues (`npm audit`, plus `gitleaks` and `semgrep` when installed), duplicated code
-(`jscpd`), test results (jest/vitest/pytest — pass/fail, duration, coverage), build speed,
-accessibility, flaky-test and race-condition heuristics, and developer-experience checks
-(unused exports, duplicate functions).
+issues (`npm audit`, plus `pip-audit`/`osv-scanner` for Python and other stacks, and
+`gitleaks`/`semgrep` when installed), duplicated code (`jscpd`), test results
+(jest/vitest/pytest plus native suites for Go, Rust, Flutter/Dart, .NET and Java
+(Maven/Gradle) — pass/fail, duration, coverage), build speed, accessibility, flaky-test
+and race-condition heuristics, and developer-experience checks (unused exports, duplicate
+functions).
 
 Each check either contributes a real number, or prints `skipped` with a one-line hint on
 how to install the tool it needs — it never makes up a number. Everything adds up to one
@@ -283,8 +283,8 @@ A–F grade) across the categories that actually ran.
 
 Scans are fast by design: the checks run **in parallel**, flaky detection runs the suite
 **twice** by default (`--reliability-runs <n>` to tune; `1` disables it), and `npm audit`
-results are cached for 24 hours (keyed on the lockfile hash) so repeated scans inside one
-fix loop never hit the registry again.
+(plus `osv-scanner`) results are cached for 24 hours (keyed on the lockfile hash) so
+repeated scans inside one fix loop never hit the registry again.
 
 ## Every command
 

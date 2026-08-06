@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [0.9.1] - 2026-08-06
+
+### Changed
+
+- **Docs aligned with 0.9.0.** README scan section now lists pip-audit/osv-scanner and
+  the native test suites (Go, Rust, Flutter/Dart, .NET, Java); the `/guardian --ledger`
+  prompt description now names both sandboxes (nock preload for Node/JS, recording
+  HTTP(S)_PROXY server for other stacks); CONTRIBUTING directory map includes
+  `suiteRunner.ts`, `routes.ts` and `src/sandbox/`. Removed the deleted
+  `docs/feature-tour.md` reference.
+
 ## [0.9.0] - 2026-08-06
 
 ### Added
@@ -13,8 +24,7 @@ All notable changes to this project are documented here.
 - **README feature tour.** Eleven per-feature GIFs
   (`docs/media/guardian-{scan,verify,trends,inspect,repro,pen,report,share,honesty,try,watch}.gif`)
   captured from real command output, each embedded in its own "Feature tour"
-  section with a one-line caption. Full scripted run lives in
-  `docs/feature-tour.md`.
+  section with a one-line caption.
 - **Cross-stack support (Go, Rust, Dart, .NET, Java).** `detectLanguage` now recognizes
   go.mod / Cargo.toml / pubspec.yaml / .csproj / pom.xml / build.gradle repos, and every
   analyzer that was Node/Python-only now has a real path for the new stacks:

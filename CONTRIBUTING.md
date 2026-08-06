@@ -24,9 +24,12 @@ src/analyzers/        one file per analyzer (the Phase-1 scan dimension)
   types.ts            every analyzer's result type + ClusterFinding + ScanResult
   index.ts            runAllAnalyzers() — the registration point
   util.ts             shared helpers (walkFiles, safeExec, commandExists, lineOf, ...)
+  suiteRunner.ts      multi-language test-suite runner (go/cargo/flutter/dotnet/maven/gradle parsers)
+  routes.ts           language-aware route discovery (shared by pen and ledger)
 src/analyzers/integrity/  diff-scoped AI-agent-cheat detectors (testTamper, exceptionSwallow,
   suppressionCreep, hardcodedMatch, mockOverreach, exitCheat, assertionLiteralTamper) —
   wired into `guardian verify`
+src/sandbox/          non-Node sandboxing (recording HTTP(S)_PROXY server + start-command resolvers)
 src/installer/         slash-command install targets (Claude, Cursor, OpenCode, Antigravity,
   Kilo Code, Gemini CLI, Codex) + the template transforms (skill / workflow frontmatter
   rewrites, gemini TOML conversion)

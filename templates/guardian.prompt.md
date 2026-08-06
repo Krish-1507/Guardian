@@ -90,8 +90,9 @@ confirm, fix, verify, repeat, as if you had been invoked there.
 
 ## Mode: --ledger
 
-Run the scan as `!npx cli-guardian scan --ledger` (this boots the app under a nock
-sandbox and fuzzes money-moving endpoints for missing idempotency). Then run the
+Run the scan as `!npx cli-guardian scan --ledger` (this boots the app under a sandbox — the
+nock preload for Node/JS apps, a recording HTTP(S)_PROXY server for Go/Python/Rust/.NET —
+and fuzzes money-moving endpoints for missing idempotency). Then run the
 **default full loop** (the section below) restricted to ledger findings only.
 
 ## Mode: --integrity-only
