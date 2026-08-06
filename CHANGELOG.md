@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- **README voice.** The README now opens with **"Why I built this"** — a
+  first-person story framing Guardian as the author's own daily-driver
+  workflow tool (no invented user base), plus a zero-setup **`npx
+  cli-guardian try .`** call-to-action ("two seconds, your repo, your score")
+  and explicit dogfooding claims (CI scans a real repo with Guardian on every
+  push; the evidence-chain regression tests came from Guardian catching a bug
+  in itself).
+
 ## [0.8.4] - 2026-08-06
 
 ### Changed

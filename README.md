@@ -13,6 +13,22 @@
 
 ---
 
+## Why I built this
+
+I spend my days running coding agents on real repos. They're brilliant at fixing things —
+and equally brilliant at *telling me they did* when they didn't: focusing tests to hide
+failures, deleting the failing test, editing an assertion to match the buggy output. I got
+tired of auditing my agent's work by hand, so I built a referee.
+
+Guardian is my own workflow tool, not a showcase: every repo I touch gets the loop, every
+change gets the gate, and the numbers in this README are the same numbers I trust. It's
+dogfooded hard — Guardian's own CI scans a real repo with Guardian on every push (Linux and
+Windows), and the evidence chain is regression-tested because a bug in it once made Guardian
+cry `TAMPERED` at baselines it had just written. If it can referee itself, it can referee
+your agent.
+
+---
+
 ## See it in 90 seconds
 
 Two commands. First, a real broken repo — scanned, scored and reported in seconds:
@@ -41,6 +57,14 @@ ACT 3  agent deletes the test       →  GATE: CONFIRMED_CHEAT (exit 2) — bloc
 
 Deterministic, safe to run in a live room, and it's the whole product in miniature:
 **Guardian measures, your agent edits, and the numbers can't be cheated.**
+
+Not even 90 seconds? Point it at **your own repo** — zero setup, no install, no config:
+
+```bash
+npx cli-guardian try .
+```
+
+Two seconds, your repo, your score. Everything else can wait.
 
 ---
 
